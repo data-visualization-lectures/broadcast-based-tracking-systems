@@ -17,7 +17,8 @@ export default function ExportPanel() {
   const timeRange = useStore((s) => s.timeRange)
   const tracks = useStore((s) => s.tracks)
 
-  const [progress, setProgress] = useState(null)
+  const [progress, setProgress] = useState(null) // 0-100 or null
+  const [phase, setPhase] = useState('')
   const [error, setError] = useState(null)
   const cancelRef = useRef(false)
 
@@ -26,14 +27,21 @@ export default function ExportPanel() {
   const handleExport = useCallback(async () => {
     if (!hasData) return
     setError(null)
+    setPhase('')
     cancelRef.current = false
 
-    if (exportMethod === 'client-gif') {
-      await exportClientGif({ timeRange, tracks, exportFps, exportWidth, setProgress, cancelRef })
-    } else if (exportMethod === 'zip') {
-      await exportZip({ timeRange, tracks, exportFps, exportWidth, setProgress, cancelRef, BACKEND_URL })
-    } else if (exportMethod === 'server-gif') {
-      await exportServerGif({ timeRange, tracks, exportFps, exportWidth, setProgress, cancelRef, BACKEND_URL })
+    try {
+      if (exportMethod === 'client-gif') {
+        await exportClientGif({ timeRange, tracks, exportFps, exportWidth, setProgress, setPhase, cancelRef })
+      } else if (exportMethod === 'zip') {
+        await exportZip({ timeRange, tracks, exportFps, exportWidth, setProgress, setPhase, cancelRef, BACKEND_URL })
+      } else if (exportMethod === 'server-gif') {
+        await exportServerGif({ timeRange, tracks, exportFps, exportWidth, setProgress, setPhase, cancelRef, BACKEND_URL })
+      }
+    } catch (e) {
+      setError(e.message || 'エクスポートに失敗しました')
+      setProgress(null)
+      setPhase('')
     }
   }, [exportMethod, exportFps, exportWidth, timeRange, tracks, hasData])
 
@@ -101,12 +109,12 @@ export default function ExportPanel() {
         disabled={!hasData || progress !== null}
         className="w-full py-2 rounded bg-cyan-600 hover:bg-cyan-500 text-white text-sm font-semibold disabled:opacity-40"
       >
-        {progress !== null ? `生成中... ${progress}%` : 'エクスポート開始'}
+        {progress !== null ? `${phase} ${progress}%` : 'エクスポート開始'}
       </button>
 
       {progress !== null && (
         <button
-          onClick={() => { cancelRef.current = true; setProgress(null) }}
+          onClick={() => { cancelRef.current = true; setProgress(null); setPhase('') }}
           className="w-full py-1 rounded bg-gray-700 hover:bg-gray-600 text-xs text-gray-300"
         >
           キャンセル
@@ -198,7 +206,7 @@ async function renderFrame(tracks, currentTime, width, tileProvider) {
   return canvas
 }
 
-async function exportClientGif({ timeRange, tracks, exportFps, exportWidth, setProgress, cancelRef }) {
+async function exportClientGif({ timeRange, tracks, exportFps, exportWidth, setProgress, setPhase, cancelRef }) {
   const { default: GIF } = await import('gif.js')
   const totalDuration = timeRange.end - timeRange.start
   const frameInterval = 1000 / exportFps
@@ -213,17 +221,23 @@ async function exportClientGif({ timeRange, tracks, exportFps, exportWidth, setP
     workerScript: '/gif.worker.js',
   })
 
-  let framesDone = 0
+  // フェーズ1: フレーム生成 (0 → 70%)
+  setPhase('フレーム生成中...')
   for (let i = 0; i <= frameCount; i++) {
     if (cancelRef.current) return
     const t = timeRange.start + (totalDuration * i) / frameCount
     const canvas = await renderFrame(tracks, t, exportWidth)
     gif.addFrame(canvas, { delay: Math.round(1000 / exportFps), copy: true })
-    framesDone++
-    setProgress(Math.round((framesDone / (frameCount + 1)) * 80))
+    setProgress(Math.round(((i + 1) / (frameCount + 1)) * 70))
   }
 
+  // フェーズ2: GIFエンコード (70 → 100%)
+  setPhase('GIFエンコード中...')
+  setProgress(70)
   await new Promise((resolve, reject) => {
+    gif.on('progress', (p) => {
+      setProgress(70 + Math.round(p * 30))
+    })
     gif.on('finished', (blob) => {
       const url = URL.createObjectURL(blob)
       const a = document.createElement('a')
@@ -232,27 +246,29 @@ async function exportClientGif({ timeRange, tracks, exportFps, exportWidth, setP
       a.click()
       URL.revokeObjectURL(url)
       setProgress(null)
+      setPhase('')
       resolve()
     })
     gif.on('error', reject)
     gif.render()
-    setProgress(90)
   })
 }
 
-async function exportZip({ timeRange, tracks, exportFps, exportWidth, setProgress, cancelRef, BACKEND_URL }) {
+async function exportZip({ timeRange, tracks, exportFps, exportWidth, setProgress, setPhase, cancelRef, BACKEND_URL }) {
   const totalDuration = timeRange.end - timeRange.start
   const frameCount = Math.min(Math.ceil(totalDuration / 1000) * exportFps, 300)
   const frames = []
 
+  setPhase('フレーム生成中...')
   for (let i = 0; i <= frameCount; i++) {
     if (cancelRef.current) return
     const t = timeRange.start + (totalDuration * i) / frameCount
     const canvas = await renderFrame(tracks, t, exportWidth)
     frames.push(canvas.toDataURL('image/png').split(',')[1])
-    setProgress(Math.round((i / frameCount) * 70))
+    setProgress(Math.round(((i + 1) / (frameCount + 1)) * 70))
   }
 
+  setPhase('サーバ処理中...')
   setProgress(80)
   const res = await fetch(`${BACKEND_URL}/api/export/zip`, {
     method: 'POST',
@@ -268,21 +284,24 @@ async function exportZip({ timeRange, tracks, exportFps, exportWidth, setProgres
   a.click()
   URL.revokeObjectURL(url)
   setProgress(null)
+  setPhase('')
 }
 
-async function exportServerGif({ timeRange, tracks, exportFps, exportWidth, setProgress, cancelRef, BACKEND_URL }) {
+async function exportServerGif({ timeRange, tracks, exportFps, exportWidth, setProgress, setPhase, cancelRef, BACKEND_URL }) {
   const totalDuration = timeRange.end - timeRange.start
   const frameCount = Math.min(Math.ceil(totalDuration / 1000) * exportFps, 200)
   const frames = []
 
+  setPhase('フレーム生成中...')
   for (let i = 0; i <= frameCount; i++) {
     if (cancelRef.current) return
     const t = timeRange.start + (totalDuration * i) / frameCount
     const canvas = await renderFrame(tracks, t, exportWidth)
     frames.push(canvas.toDataURL('image/png').split(',')[1])
-    setProgress(Math.round((i / frameCount) * 70))
+    setProgress(Math.round(((i + 1) / (frameCount + 1)) * 70))
   }
 
+  setPhase('サーバ処理中...')
   setProgress(80)
   const res = await fetch(`${BACKEND_URL}/api/export/gif`, {
     method: 'POST',
@@ -298,4 +317,5 @@ async function exportServerGif({ timeRange, tracks, exportFps, exportWidth, setP
   a.click()
   URL.revokeObjectURL(url)
   setProgress(null)
+  setPhase('')
 }
