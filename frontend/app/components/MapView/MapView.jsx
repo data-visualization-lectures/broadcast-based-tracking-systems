@@ -1,5 +1,5 @@
 'use client'
-import { useEffect, useRef, useCallback } from 'react'
+import { useEffect, useRef } from 'react'
 import maplibregl from 'maplibre-gl'
 import 'maplibre-gl/dist/maplibre-gl.css'
 import { Deck } from '@deck.gl/core'
@@ -7,9 +7,8 @@ import { PathLayer, IconLayer, ScatterplotLayer } from '@deck.gl/layers'
 import useStore from '@/app/store/useStore'
 import { TILE_PROVIDERS } from '@/app/utils/tileProviders'
 import { getInterpolatedPositions, getTrailPoints } from '@/app/utils/geoUtils'
-import { ICON_SVGS, svgToDataUrl } from '@/app/utils/iconConfig'
+import { ICON_SVGS } from '@/app/utils/iconConfig'
 
-// SVGアイコンを Canvas に描画してテクスチャを作成
 function buildIconAtlas(size = 128) {
   if (typeof window === 'undefined') return { iconAtlas: null, iconMapping: {} }
 
@@ -22,17 +21,13 @@ function buildIconAtlas(size = 128) {
   const mapping = {}
   keys.forEach((key, i) => {
     mapping[key] = { x: i * size, y: 0, width: size, height: size, mask: true }
-
     const img = new Image()
-    const svgBlob = new Blob(
+    const blob = new Blob(
       [ICON_SVGS[key].replace(/currentColor/g, 'black')],
       { type: 'image/svg+xml' }
     )
-    const url = URL.createObjectURL(svgBlob)
-    img.onload = () => {
-      ctx.drawImage(img, i * size, 0, size, size)
-      URL.revokeObjectURL(url)
-    }
+    const url = URL.createObjectURL(blob)
+    img.onload = () => { ctx.drawImage(img, i * size, 0, size, size); URL.revokeObjectURL(url) }
     img.src = url
   })
 
@@ -41,38 +36,41 @@ function buildIconAtlas(size = 128) {
 
 export default function MapView() {
   const mapContainer = useRef(null)
-  const deckCanvas = useRef(null)
-  const mapRef = useRef(null)
-  const deckRef = useRef(null)
-  const atlasRef = useRef(null)
-  const mappingRef = useRef(null)
+  const deckCanvas   = useRef(null)
+  const mapRef       = useRef(null)
+  const deckRef      = useRef(null)
+  const atlasRef     = useRef(null)
+  const mappingRef   = useRef(null)
+  // プログラムによる移動中は move イベントを無視するフラグ
+  const progMoveRef  = useRef(false)
 
-  const tracks = useStore((s) => s.tracks)
-  const currentTime = useStore((s) => s.currentTime)
-  const tileProvider = useStore((s) => s.tileProvider)
-  const mapCenter = useStore((s) => s.mapCenter)
-  const mapZoom = useStore((s) => s.mapZoom)
-  const trailMode = useStore((s) => s.trailMode)
+  const tracks             = useStore((s) => s.tracks)
+  const currentTime        = useStore((s) => s.currentTime)
+  const tileProvider       = useStore((s) => s.tileProvider)
+  const mapCenterLat       = useStore((s) => s.mapCenter.lat)
+  const mapCenterLon       = useStore((s) => s.mapCenter.lon)
+  const mapZoom            = useStore((s) => s.mapZoom)
+  const trailMode          = useStore((s) => s.trailMode)
   const trailWindowMinutes = useStore((s) => s.trailWindowMinutes)
-  const iconSize = useStore((s) => s.iconSize)
-  const setMapCenter = useStore((s) => s.setMapCenter)
-  const setMapZoom = useStore((s) => s.setMapZoom)
+  const iconSize           = useStore((s) => s.iconSize)
+  const setMapCenter       = useStore((s) => s.setMapCenter)
+  const setMapZoom         = useStore((s) => s.setMapZoom)
 
   // アイコンアトラスを一度だけ生成
   useEffect(() => {
     const { iconAtlas, iconMapping } = buildIconAtlas(128)
-    atlasRef.current = iconAtlas
+    atlasRef.current  = iconAtlas
     mappingRef.current = iconMapping
   }, [])
 
-  // MapLibre 初期化
+  // MapLibre + Deck.gl 初期化（マウント時1回のみ）
   useEffect(() => {
     if (!mapContainer.current || mapRef.current) return
 
     const map = new maplibregl.Map({
       container: mapContainer.current,
       style: TILE_PROVIDERS[tileProvider]?.style || TILE_PROVIDERS.osm.style,
-      center: [mapCenter.lon, mapCenter.lat],
+      center: [mapCenterLon, mapCenterLat],
       zoom: mapZoom,
       interactive: true,
     })
@@ -80,7 +78,9 @@ export default function MapView() {
     map.addControl(new maplibregl.NavigationControl(), 'top-right')
     map.addControl(new maplibregl.ScaleControl(), 'bottom-right')
 
+    // ユーザーが地図を動かしたときのみ store を更新
     map.on('move', () => {
+      if (progMoveRef.current) return   // プログラム移動中は無視
       const c = map.getCenter()
       setMapCenter({ lat: c.lat, lon: c.lng })
       setMapZoom(map.getZoom())
@@ -88,26 +88,16 @@ export default function MapView() {
 
     mapRef.current = map
 
-    // Deck.gl 初期化
     const deck = new Deck({
       canvas: deckCanvas.current,
       initialViewState: {
-        longitude: mapCenter.lon,
-        latitude: mapCenter.lat,
+        longitude: mapCenterLon,
+        latitude: mapCenterLat,
         zoom: mapZoom,
       },
       controller: false,
       layers: [],
-      onViewStateChange: ({ viewState }) => {
-        map.jumpTo({
-          center: [viewState.longitude, viewState.latitude],
-          zoom: viewState.zoom,
-          bearing: viewState.bearing,
-          pitch: viewState.pitch,
-        })
-      },
     })
-
     deckRef.current = deck
 
     return () => {
@@ -122,26 +112,26 @@ export default function MapView() {
   // タイル変更
   useEffect(() => {
     if (!mapRef.current) return
-    const style = TILE_PROVIDERS[tileProvider]?.style || TILE_PROVIDERS.osm.style
-    mapRef.current.setStyle(style)
+    mapRef.current.setStyle(TILE_PROVIDERS[tileProvider]?.style || TILE_PROVIDERS.osm.style)
   }, [tileProvider])
 
-  // 外部からの地図センター・ズーム変更
+  // サイドバーからの mapCenter / mapZoom 変更をマップに反映
+  // ※ progMoveRef で move イベントのループを防ぐ
   useEffect(() => {
     if (!mapRef.current) return
-    mapRef.current.jumpTo({
-      center: [mapCenter.lon, mapCenter.lat],
-      zoom: mapZoom,
-    })
-  }, [mapCenter, mapZoom])
+    progMoveRef.current = true
+    mapRef.current.jumpTo({ center: [mapCenterLon, mapCenterLat], zoom: mapZoom })
+    // jumpTo のアニメーション完了後にフラグをリセット
+    const id = setTimeout(() => { progMoveRef.current = false }, 200)
+    return () => clearTimeout(id)
+  }, [mapCenterLat, mapCenterLon, mapZoom])
 
-  // レイヤー更新
+  // Deck.gl レイヤー更新
   useEffect(() => {
-    if (!deckRef.current) return
+    if (!deckRef.current || !mapRef.current) return
 
     const positions = getInterpolatedPositions(tracks, currentTime)
 
-    // 軌跡レイヤー
     const trailLayers = tracks
       .filter((t) => t.visible)
       .map((track) => {
@@ -160,13 +150,11 @@ export default function MapView() {
       })
       .filter(Boolean)
 
-    // アイコンレイヤー
     const iconData = positions.map(({ track, point }) => ({
       position: [point.lon, point.lat],
       direction: point.direction,
       icon: track.iconType,
       color: hexToRgb(track.color),
-      label: track.label,
     }))
 
     const iconLayer = atlasRef.current
@@ -190,20 +178,15 @@ export default function MapView() {
           getFillColor: (d) => [...d.color, 220],
           getRadius: 8,
           radiusUnits: 'pixels',
-          pickable: true,
         })
 
-    const map = mapRef.current
-    if (!map) return
-    const center = map.getCenter()
-    const zoom = map.getZoom()
-
+    const c = mapRef.current.getCenter()
     deckRef.current.setProps({
       layers: [...trailLayers, iconLayer],
       viewState: {
-        longitude: center.lng,
-        latitude: center.lat,
-        zoom,
+        longitude: c.lng,
+        latitude: c.lat,
+        zoom: mapRef.current.getZoom(),
         bearing: 0,
         pitch: 0,
       },
@@ -223,8 +206,9 @@ export default function MapView() {
 }
 
 function hexToRgb(hex) {
-  const r = parseInt(hex.slice(1, 3), 16)
-  const g = parseInt(hex.slice(3, 5), 16)
-  const b = parseInt(hex.slice(5, 7), 16)
-  return [r, g, b]
+  return [
+    parseInt(hex.slice(1, 3), 16),
+    parseInt(hex.slice(3, 5), 16),
+    parseInt(hex.slice(5, 7), 16),
+  ]
 }
