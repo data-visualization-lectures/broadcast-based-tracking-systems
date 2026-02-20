@@ -251,7 +251,24 @@ async function captureMapBackground(mapInstance, exportWidth) {
     const bgCanvas = document.createElement('canvas')
     bgCanvas.width = exportWidth
     bgCanvas.height = exportHeight
-    bgCanvas.getContext('2d').drawImage(img, 0, 0, exportWidth, exportHeight)
+    const bgCtx = bgCanvas.getContext('2d')
+    bgCtx.drawImage(img, 0, 0, exportWidth, exportHeight)
+
+    // 著作権表示を右下に描き込む（HTML オーバーレイはキャンバスに含まれないため）
+    const attrEl = mapInstance.getContainer().querySelector('.maplibregl-ctrl-attrib-inner')
+    const attrText = attrEl ? attrEl.innerText.trim() : ''
+    if (attrText) {
+      const fontSize = Math.max(10, Math.round(exportWidth / 72))
+      bgCtx.font = `${fontSize}px sans-serif`
+      const padding = 4
+      const textW = bgCtx.measureText(attrText).width
+      const boxX = exportWidth - textW - padding * 2 - 6
+      const boxY = exportHeight - fontSize - padding * 2 - 4
+      bgCtx.fillStyle = 'rgba(255,255,255,0.75)'
+      bgCtx.fillRect(boxX, boxY, textW + padding * 2, fontSize + padding * 2)
+      bgCtx.fillStyle = '#333333'
+      bgCtx.fillText(attrText, boxX + padding, boxY + fontSize + padding - 1)
+    }
 
     return { bgCanvas, toXY }
   } catch (e) {
