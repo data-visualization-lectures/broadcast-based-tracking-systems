@@ -18,8 +18,11 @@ export default function ExportPanel() {
   const setExportWidth = useStore((s) => s.setExportWidth)
   const timeRange = useStore((s) => s.timeRange)
   const tracks = useStore((s) => s.tracks)
+  const currentTime = useStore((s) => s.currentTime)
   const mapInstance = useStore((s) => s.mapInstance)
   const playbackSpeed = useStore((s) => s.playbackSpeed)
+
+  const hasData = tracks.length > 0 && timeRange.end > timeRange.start
 
   // 再生速度と FPS から動画の推定フレーム数・尺を計算
   // 1フレーム = playbackSpeed × 1000ms ÷ exportFps のシミュレーション時間
@@ -32,9 +35,9 @@ export default function ExportPanel() {
   const [progress, setProgress] = useState(null) // 0-100 or null
   const [phase, setPhase] = useState('')
   const [error, setError] = useState(null)
+  const [previewUrl, setPreviewUrl] = useState(null)
+  const [isPreviewing, setIsPreviewing] = useState(false)
   const cancelRef = useRef(false)
-
-  const hasData = tracks.length > 0 && timeRange.end > timeRange.start
 
   const handleExport = useCallback(async () => {
     if (!hasData) return
@@ -61,6 +64,19 @@ export default function ExportPanel() {
       setPhase('')
     }
   }, [exportMethod, exportFps, exportWidth, playbackSpeed, timeRange, tracks, hasData, mapInstance])
+
+  const handlePreview = useCallback(async () => {
+    if (!hasData) return
+    setIsPreviewing(true)
+    setPreviewUrl(null)
+    try {
+      const { bgCanvas, toXY } = await captureMapBackground(mapInstance, exportWidth)
+      const canvas = renderFrame(tracks, currentTime, exportWidth, bgCanvas, toXY)
+      setPreviewUrl(canvas.toDataURL('image/png'))
+    } finally {
+      setIsPreviewing(false)
+    }
+  }, [hasData, mapInstance, exportWidth, tracks, currentTime])
 
   return (
     <div className="space-y-3">
@@ -130,6 +146,31 @@ export default function ExportPanel() {
               <span className="text-yellow-500"> ※上限{MAX_EXPORT_FRAMES}fで間引き</span>
             )}
           </div>
+        </div>
+      )}
+
+      {/* フレームプレビュー */}
+      <button
+        onClick={handlePreview}
+        disabled={!hasData || isPreviewing || progress !== null}
+        className="w-full py-1.5 rounded bg-gray-700 hover:bg-gray-600 text-xs text-gray-200 disabled:opacity-40"
+      >
+        {isPreviewing ? 'プレビュー生成中...' : '現在フレームをプレビュー'}
+      </button>
+
+      {previewUrl && (
+        <div className="relative">
+          <img
+            src={previewUrl}
+            alt="frame preview"
+            className="w-full rounded border border-gray-600"
+          />
+          <button
+            onClick={() => setPreviewUrl(null)}
+            className="absolute top-1 right-1 bg-black/60 text-white text-xs rounded px-1.5 py-0.5 hover:bg-black/80"
+          >
+            ✕
+          </button>
         </div>
       )}
 
