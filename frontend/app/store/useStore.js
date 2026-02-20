@@ -33,6 +33,9 @@ const useStore = create((set, get) => ({
   exportFps: 5,
   exportWidth: 720,
 
+  // MapLibre インスタンス（エクスポート用キャプチャに使用）
+  mapInstance: null,
+
   // アクション
   addTrack: (track) => {
     const color = nextColor()
@@ -79,6 +82,7 @@ const useStore = create((set, get) => ({
   setExportMethod: (m) => set({ exportMethod: m }),
   setExportFps: (n) => set({ exportFps: n }),
   setExportWidth: (n) => set({ exportWidth: n }),
+  setMapInstance: (map) => set({ mapInstance: map }),
 
   fitAll: () => {
     const { tracks } = get()

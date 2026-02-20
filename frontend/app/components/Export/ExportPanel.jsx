@@ -1,6 +1,7 @@
 'use client'
 import { useState, useRef, useCallback } from 'react'
 import useStore from '@/app/store/useStore'
+import { getInterpolatedPositions } from '@/app/utils/geoUtils'
 
 const FPS_OPTIONS = [1, 2, 5, 10]
 const WIDTH_OPTIONS = [480, 720, 1080]
@@ -16,6 +17,7 @@ export default function ExportPanel() {
   const setExportWidth = useStore((s) => s.setExportWidth)
   const timeRange = useStore((s) => s.timeRange)
   const tracks = useStore((s) => s.tracks)
+  const mapInstance = useStore((s) => s.mapInstance)
 
   const [progress, setProgress] = useState(null) // 0-100 or null
   const [phase, setPhase] = useState('')
@@ -32,11 +34,11 @@ export default function ExportPanel() {
 
     try {
       if (exportMethod === 'client-gif') {
-        await exportClientGif({ timeRange, tracks, exportFps, exportWidth, setProgress, setPhase, cancelRef })
+        await exportClientGif({ timeRange, tracks, exportFps, exportWidth, setProgress, setPhase, cancelRef, mapInstance })
       } else if (exportMethod === 'zip') {
-        await exportZip({ timeRange, tracks, exportFps, exportWidth, setProgress, setPhase, cancelRef, BACKEND_URL })
+        await exportZip({ timeRange, tracks, exportFps, exportWidth, setProgress, setPhase, cancelRef, BACKEND_URL, mapInstance })
       } else if (exportMethod === 'server-gif') {
-        await exportServerGif({ timeRange, tracks, exportFps, exportWidth, setProgress, setPhase, cancelRef, BACKEND_URL })
+        await exportServerGif({ timeRange, tracks, exportFps, exportWidth, setProgress, setPhase, cancelRef, BACKEND_URL, mapInstance })
       }
     } catch (e) {
       setError(e.message || 'エクスポートに失敗しました')
@@ -134,65 +136,90 @@ export default function ExportPanel() {
 
 // ---- エクスポート実装 ----
 
-async function renderFrame(tracks, currentTime, width, tileProvider) {
-  // Canvas にマップ画像を描画する簡易実装
-  // 実際の地図キャプチャは html2canvas や puppeteer が必要
-  // ここでは軽量な Canvas 描画を行う
-  const height = Math.round(width * 0.5625) // 16:9
+/**
+ * エクスポート開始時にマップの背景と投影関数をキャプチャする
+ * bgCanvas: マップタイルを描画した静止背景 Canvas
+ * toXY: (lon, lat) → {x, y} エクスポートサイズ座標系
+ */
+function captureMapBackground(mapInstance, exportWidth) {
+  const exportHeight = Math.round(exportWidth * 0.5625)
+  if (!mapInstance) return { bgCanvas: null, toXY: null }
 
+  const mapCanvas = mapInstance.getCanvas()
+  const bgCanvas = document.createElement('canvas')
+  bgCanvas.width = exportWidth
+  bgCanvas.height = exportHeight
+  bgCanvas.getContext('2d').drawImage(mapCanvas, 0, 0, exportWidth, exportHeight)
+
+  // project() は CSS px を返すので、CSSコンテナサイズ基準でスケール
+  const container = mapInstance.getContainer()
+  const scaleX = exportWidth / container.clientWidth
+  const scaleY = exportHeight / container.clientHeight
+  const toXY = (lon, lat) => {
+    const pt = mapInstance.project([lon, lat])
+    return { x: pt.x * scaleX, y: pt.y * scaleY }
+  }
+
+  return { bgCanvas, toXY }
+}
+
+function renderFrame(tracks, currentTime, width, bgCanvas, toXY) {
+  const height = Math.round(width * 0.5625)
   const canvas = document.createElement('canvas')
   canvas.width = width
   canvas.height = height
-  const ctx = canvas.getContext('2d')
+  const ctx = canvas.getContext('2d', { willReadFrequently: true })
 
-  // 背景
-  ctx.fillStyle = '#1a1a2e'
-  ctx.fillRect(0, 0, width, height)
+  // 背景: マップタイル（キャプチャ済み）またはフォールバック色
+  if (bgCanvas) {
+    ctx.drawImage(bgCanvas, 0, 0, width, height)
+  } else {
+    ctx.fillStyle = '#0f3460'
+    ctx.fillRect(0, 0, width, height)
+  }
 
-  // 簡易世界地図の描画（実装省略 - 実際はMapLibreのcanvasをキャプチャ）
-  ctx.fillStyle = '#0f4c75'
-  ctx.fillRect(0, 0, width, height)
+  // 座標変換関数（mapInstance なし時は簡易 lat/lon → pixel 変換）
+  let project = toXY
+  if (!project) {
+    const allPoints = tracks.flatMap((t) => t.points)
+    if (allPoints.length === 0) return canvas
+    const lats = allPoints.map((p) => p.lat)
+    const lons = allPoints.map((p) => p.lon)
+    const minLat = Math.min(...lats), maxLat = Math.max(...lats)
+    const minLon = Math.min(...lons), maxLon = Math.max(...lons)
+    const latRange = (maxLat - minLat) * 1.1 || 1
+    const lonRange = (maxLon - minLon) * 1.1 || 1
+    const cLat = (minLat + maxLat) / 2
+    const cLon = (minLon + maxLon) / 2
+    project = (lon, lat) => ({
+      x: ((lon - cLon) / lonRange + 0.5) * width,
+      y: (0.5 - (lat - cLat) / latRange) * height,
+    })
+  }
 
-  // 軌跡とアイコンを描画
-  const allPoints = tracks.flatMap((t) => t.points)
-  if (allPoints.length === 0) return canvas
-
-  const lats = allPoints.map((p) => p.lat)
-  const lons = allPoints.map((p) => p.lon)
-  const minLat = Math.min(...lats), maxLat = Math.max(...lats)
-  const minLon = Math.min(...lons), maxLon = Math.max(...lons)
-  const padFactor = 0.1
-  const latRange = (maxLat - minLat) * (1 + padFactor) || 1
-  const lonRange = (maxLon - minLon) * (1 + padFactor) || 1
-  const centerLat = (minLat + maxLat) / 2
-  const centerLon = (minLon + maxLon) / 2
-
-  const toX = (lon) => ((lon - centerLon) / lonRange + 0.5) * width
-  const toY = (lat) => (0.5 - (lat - centerLat) / latRange) * height
-
-  tracks.filter((t) => t.visible).forEach((track) => {
+  // 軌跡を描画
+  tracks.filter((t) => t.visible && t.points.length >= 2).forEach((track) => {
     const pastPoints = track.points.filter((p) => p.t <= currentTime)
     if (pastPoints.length < 2) return
-
-    ctx.strokeStyle = track.color + 'aa'
+    ctx.strokeStyle = track.color + 'cc'
     ctx.lineWidth = 2
     ctx.beginPath()
     pastPoints.forEach((p, i) => {
-      const x = toX(p.lon)
-      const y = toY(p.lat)
+      const { x, y } = project(p.lon, p.lat)
       if (i === 0) ctx.moveTo(x, y)
       else ctx.lineTo(x, y)
     })
     ctx.stroke()
+  })
 
-    // アイコン（現在位置）
-    const last = pastPoints[pastPoints.length - 1]
-    const x = toX(last.lon)
-    const y = toY(last.lat)
+  // 現在位置アイコンを描画
+  getInterpolatedPositions(tracks, currentTime).forEach(({ track, point }) => {
+    if (!track.visible) return
+    const { x, y } = project(point.lon, point.lat)
     ctx.fillStyle = track.color
     ctx.save()
     ctx.translate(x, y)
-    ctx.rotate((last.direction * Math.PI) / 180)
+    ctx.rotate((point.direction * Math.PI) / 180)
     ctx.beginPath()
     ctx.moveTo(0, -8)
     ctx.lineTo(5, 8)
@@ -206,12 +233,14 @@ async function renderFrame(tracks, currentTime, width, tileProvider) {
   return canvas
 }
 
-async function exportClientGif({ timeRange, tracks, exportFps, exportWidth, setProgress, setPhase, cancelRef }) {
+async function exportClientGif({ timeRange, tracks, exportFps, exportWidth, setProgress, setPhase, cancelRef, mapInstance }) {
   const { default: GIF } = await import('gif.js')
   const totalDuration = timeRange.end - timeRange.start
   const frameInterval = 1000 / exportFps
   const simStepMs = totalDuration / Math.ceil(totalDuration / (frameInterval * 10))
   const frameCount = Math.ceil(totalDuration / (simStepMs * exportFps)) || 30
+
+  const { bgCanvas, toXY } = captureMapBackground(mapInstance, exportWidth)
 
   const gif = new GIF({
     workers: 2,
@@ -226,7 +255,7 @@ async function exportClientGif({ timeRange, tracks, exportFps, exportWidth, setP
   for (let i = 0; i <= frameCount; i++) {
     if (cancelRef.current) return
     const t = timeRange.start + (totalDuration * i) / frameCount
-    const canvas = await renderFrame(tracks, t, exportWidth)
+    const canvas = renderFrame(tracks, t, exportWidth, bgCanvas, toXY)
     gif.addFrame(canvas, { delay: Math.round(1000 / exportFps), copy: true })
     setProgress(Math.round(((i + 1) / (frameCount + 1)) * 70))
   }
@@ -254,16 +283,18 @@ async function exportClientGif({ timeRange, tracks, exportFps, exportWidth, setP
   })
 }
 
-async function exportZip({ timeRange, tracks, exportFps, exportWidth, setProgress, setPhase, cancelRef, BACKEND_URL }) {
+async function exportZip({ timeRange, tracks, exportFps, exportWidth, setProgress, setPhase, cancelRef, BACKEND_URL, mapInstance }) {
   const totalDuration = timeRange.end - timeRange.start
   const frameCount = Math.min(Math.ceil(totalDuration / 1000) * exportFps, 300)
   const frames = []
+
+  const { bgCanvas, toXY } = captureMapBackground(mapInstance, exportWidth)
 
   setPhase('フレーム生成中...')
   for (let i = 0; i <= frameCount; i++) {
     if (cancelRef.current) return
     const t = timeRange.start + (totalDuration * i) / frameCount
-    const canvas = await renderFrame(tracks, t, exportWidth)
+    const canvas = renderFrame(tracks, t, exportWidth, bgCanvas, toXY)
     frames.push(canvas.toDataURL('image/png').split(',')[1])
     setProgress(Math.round(((i + 1) / (frameCount + 1)) * 70))
   }
@@ -287,16 +318,18 @@ async function exportZip({ timeRange, tracks, exportFps, exportWidth, setProgres
   setPhase('')
 }
 
-async function exportServerGif({ timeRange, tracks, exportFps, exportWidth, setProgress, setPhase, cancelRef, BACKEND_URL }) {
+async function exportServerGif({ timeRange, tracks, exportFps, exportWidth, setProgress, setPhase, cancelRef, BACKEND_URL, mapInstance }) {
   const totalDuration = timeRange.end - timeRange.start
   const frameCount = Math.min(Math.ceil(totalDuration / 1000) * exportFps, 200)
   const frames = []
+
+  const { bgCanvas, toXY } = captureMapBackground(mapInstance, exportWidth)
 
   setPhase('フレーム生成中...')
   for (let i = 0; i <= frameCount; i++) {
     if (cancelRef.current) return
     const t = timeRange.start + (totalDuration * i) / frameCount
-    const canvas = await renderFrame(tracks, t, exportWidth)
+    const canvas = renderFrame(tracks, t, exportWidth, bgCanvas, toXY)
     frames.push(canvas.toDataURL('image/png').split(',')[1])
     setProgress(Math.round(((i + 1) / (frameCount + 1)) * 70))
   }

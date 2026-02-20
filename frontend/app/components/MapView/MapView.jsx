@@ -28,6 +28,7 @@ export default function MapView() {
   const iconSize           = useStore((s) => s.iconSize)
   const setMapCenter       = useStore((s) => s.setMapCenter)
   const setMapZoom         = useStore((s) => s.setMapZoom)
+  const setMapInstance     = useStore((s) => s.setMapInstance)
 
   // ── MapLibre 初期化（マウント時1回）──────────────────────────────
   useEffect(() => {
@@ -39,6 +40,7 @@ export default function MapView() {
       center: [mapCenterLon, mapCenterLat],
       zoom: mapZoom,
       interactive: true,
+      preserveDrawingBuffer: true,  // エクスポート用キャプチャに必要
     })
 
     map.addControl(new maplibregl.NavigationControl(), 'top-right')
@@ -77,6 +79,7 @@ export default function MapView() {
     })
 
     mapRef.current = map
+    setMapInstance(map)
 
     // コンテナサイズが確定してから MapLibre に通知
     requestAnimationFrame(() => { map.resize() })
@@ -85,6 +88,7 @@ export default function MapView() {
       Object.values(markersRef.current).forEach(({ marker }) => marker.remove())
       markersRef.current = {}
       styleLoadedRef.current = false
+      setMapInstance(null)
       map.remove()
       mapRef.current = null
     }
