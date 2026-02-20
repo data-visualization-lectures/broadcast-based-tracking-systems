@@ -28,9 +28,14 @@ export default function ExportPanel() {
 
   const handleExport = useCallback(async () => {
     if (!hasData) return
+    // 即座に UI を更新してボタンを無効化・進捗表示を開始
     setError(null)
-    setPhase('')
+    setProgress(0)
+    setPhase('準備中...')
     cancelRef.current = false
+
+    // React の再レンダーをブラウザに反映させてからヘビーな処理を開始
+    await new Promise(r => setTimeout(r, 50))
 
     try {
       if (exportMethod === 'client-gif') {
@@ -45,7 +50,7 @@ export default function ExportPanel() {
       setProgress(null)
       setPhase('')
     }
-  }, [exportMethod, exportFps, exportWidth, timeRange, tracks, hasData])
+  }, [exportMethod, exportFps, exportWidth, timeRange, tracks, hasData, mapInstance])
 
   return (
     <div className="space-y-3">
@@ -258,6 +263,7 @@ async function exportClientGif({ timeRange, tracks, exportFps, exportWidth, setP
     const canvas = renderFrame(tracks, t, exportWidth, bgCanvas, toXY)
     gif.addFrame(canvas, { delay: Math.round(1000 / exportFps), copy: true })
     setProgress(Math.round(((i + 1) / (frameCount + 1)) * 70))
+    await Promise.resolve() // React が進捗バーを更新できるよう毎フレーム yield
   }
 
   // フェーズ2: GIFエンコード (70 → 100%)
@@ -297,6 +303,7 @@ async function exportZip({ timeRange, tracks, exportFps, exportWidth, setProgres
     const canvas = renderFrame(tracks, t, exportWidth, bgCanvas, toXY)
     frames.push(canvas.toDataURL('image/png').split(',')[1])
     setProgress(Math.round(((i + 1) / (frameCount + 1)) * 70))
+    await Promise.resolve()
   }
 
   setPhase('サーバ処理中...')
@@ -332,6 +339,7 @@ async function exportServerGif({ timeRange, tracks, exportFps, exportWidth, setP
     const canvas = renderFrame(tracks, t, exportWidth, bgCanvas, toXY)
     frames.push(canvas.toDataURL('image/png').split(',')[1])
     setProgress(Math.round(((i + 1) / (frameCount + 1)) * 70))
+    await Promise.resolve()
   }
 
   setPhase('サーバ処理中...')
