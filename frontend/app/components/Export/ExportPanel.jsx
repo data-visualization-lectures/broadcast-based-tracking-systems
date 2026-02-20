@@ -146,26 +146,54 @@ export default function ExportPanel() {
  * bgCanvas: マップタイルを描画した静止背景 Canvas
  * toXY: (lon, lat) → {x, y} エクスポートサイズ座標系
  */
-function captureMapBackground(mapInstance, exportWidth) {
+async function captureMapBackground(mapInstance, exportWidth) {
   const exportHeight = Math.round(exportWidth * 0.5625)
-  if (!mapInstance) return { bgCanvas: null, toXY: null }
 
-  const mapCanvas = mapInstance.getCanvas()
-  const bgCanvas = document.createElement('canvas')
-  bgCanvas.width = exportWidth
-  bgCanvas.height = exportHeight
-  bgCanvas.getContext('2d').drawImage(mapCanvas, 0, 0, exportWidth, exportHeight)
-
-  // project() は CSS px を返すので、CSSコンテナサイズ基準でスケール
-  const container = mapInstance.getContainer()
-  const scaleX = exportWidth / container.clientWidth
-  const scaleY = exportHeight / container.clientHeight
-  const toXY = (lon, lat) => {
-    const pt = mapInstance.project([lon, lat])
-    return { x: pt.x * scaleX, y: pt.y * scaleY }
+  // project 関数は mapInstance に依存（bgCanvas が取れなくても使う）
+  const buildToXY = (map) => {
+    const container = map.getContainer()
+    const scaleX = exportWidth / container.clientWidth
+    const scaleY = exportHeight / container.clientHeight
+    return (lon, lat) => {
+      const pt = map.project([lon, lat])
+      return { x: pt.x * scaleX, y: pt.y * scaleY }
+    }
   }
 
-  return { bgCanvas, toXY }
+  if (!mapInstance) return { bgCanvas: null, toXY: null }
+
+  const toXY = buildToXY(mapInstance)
+
+  // triggerRepaint → render イベント完了後にキャプチャする
+  // (preserveDrawingBuffer:true でも render タイミング外では空になる場合がある)
+  try {
+    await new Promise((resolve) => {
+      mapInstance.once('render', resolve)
+      mapInstance.triggerRepaint()
+      // フォールバック: 300ms 以内に render が来なければ進む
+      setTimeout(resolve, 300)
+    })
+
+    const mapCanvas = mapInstance.getCanvas()
+    // toDataURL 経由で確実に読み取る (drawImage 直接より安定)
+    const dataUrl = mapCanvas.toDataURL('image/png')
+    const img = await new Promise((resolve, reject) => {
+      const image = new Image()
+      image.onload = () => resolve(image)
+      image.onerror = reject
+      image.src = dataUrl
+    })
+
+    const bgCanvas = document.createElement('canvas')
+    bgCanvas.width = exportWidth
+    bgCanvas.height = exportHeight
+    bgCanvas.getContext('2d').drawImage(img, 0, 0, exportWidth, exportHeight)
+
+    return { bgCanvas, toXY }
+  } catch (e) {
+    console.warn('Map background capture failed:', e)
+    return { bgCanvas: null, toXY }
+  }
 }
 
 function renderFrame(tracks, currentTime, width, bgCanvas, toXY) {
@@ -245,7 +273,7 @@ async function exportClientGif({ timeRange, tracks, exportFps, exportWidth, setP
   const simStepMs = totalDuration / Math.ceil(totalDuration / (frameInterval * 10))
   const frameCount = Math.ceil(totalDuration / (simStepMs * exportFps)) || 30
 
-  const { bgCanvas, toXY } = captureMapBackground(mapInstance, exportWidth)
+  const { bgCanvas, toXY } = await captureMapBackground(mapInstance, exportWidth)
 
   const gif = new GIF({
     workers: 2,
@@ -294,7 +322,7 @@ async function exportZip({ timeRange, tracks, exportFps, exportWidth, setProgres
   const frameCount = Math.min(Math.ceil(totalDuration / 1000) * exportFps, 300)
   const frames = []
 
-  const { bgCanvas, toXY } = captureMapBackground(mapInstance, exportWidth)
+  const { bgCanvas, toXY } = await captureMapBackground(mapInstance, exportWidth)
 
   setPhase('フレーム生成中...')
   for (let i = 0; i <= frameCount; i++) {
@@ -330,7 +358,7 @@ async function exportServerGif({ timeRange, tracks, exportFps, exportWidth, setP
   const frameCount = Math.min(Math.ceil(totalDuration / 1000) * exportFps, 200)
   const frames = []
 
-  const { bgCanvas, toXY } = captureMapBackground(mapInstance, exportWidth)
+  const { bgCanvas, toXY } = await captureMapBackground(mapInstance, exportWidth)
 
   setPhase('フレーム生成中...')
   for (let i = 0; i <= frameCount; i++) {
