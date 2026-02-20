@@ -103,7 +103,12 @@ export default function TimelineControls() {
           </button>
           {/* 再生/停止 */}
           <button
-            onClick={() => setIsPlaying(!isPlaying)}
+            onClick={() => {
+              if (!isPlaying && currentTime >= timeRange.end) {
+                setCurrentTime(timeRange.start)
+              }
+              setIsPlaying(!isPlaying)
+            }}
             disabled={!hasData}
             className="px-3 py-1 rounded bg-cyan-600 hover:bg-cyan-500 text-white text-sm font-bold disabled:opacity-40"
           >
