@@ -1,4 +1,5 @@
 import './globals.css'
+import 'maplibre-gl/dist/maplibre-gl.css'
 
 export const metadata = {
   title: 'Broadcast Tracking System',

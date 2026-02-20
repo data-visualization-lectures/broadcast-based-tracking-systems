@@ -36,9 +36,9 @@ export default function Page() {
       </aside>
 
       {/* メインエリア */}
-      <main className="flex-1 flex flex-col overflow-hidden">
-        {/* 地図 */}
-        <div className="flex-1 relative">
+      <main className="flex-1 flex flex-col overflow-hidden min-h-0">
+        {/* 地図: min-h-0 で flex子要素の高さ collapse を防ぐ */}
+        <div className="flex-1 min-h-0" style={{ position: 'relative' }}>
           <MapView />
         </div>
         {/* タイムライン */}

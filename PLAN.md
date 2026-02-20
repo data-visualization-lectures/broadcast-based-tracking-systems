@@ -386,6 +386,56 @@ broadcast-based-tracking-systems/
 - [ ] 複数ファイル同時読み込み
 - [ ] 設定の保存（localStorage）
 - [ ] JSON 形式の読み込み対応
+- [ ] **Deck.gl 統合（数十万点規模のデータ対応）** ← 下記参照
+
+---
+
+## 描画エンジンの現状と Deck.gl 移行方針
+
+### 現在の実装（MapLibre ネイティブ）
+
+| 役割 | 実装 | 上限目安 |
+|---|---|---|
+| 軌跡描画 | MapLibre GeoJSON source + line layer | 数千〜数万点 |
+| アイコン描画 | `maplibregl.Marker`（HTML要素） | 数十機体まで |
+
+シンプルで確実に動作するが、数十万点・数百機体の規模ではパフォーマンスが低下する。
+
+### 将来: Deck.gl への移行（Phase 4）
+
+大量データが必要になった段階で Deck.gl を導入する。
+その際は **`@deck.gl/maplibre`** の公式連携モジュールを使用する。
+
+```
+npm install @deck.gl/core @deck.gl/layers @deck.gl/maplibre
+```
+
+```javascript
+// MapLibreOverlay を使う方式（透明化問題が発生しない公式推奨方法）
+import { MapboxOverlay } from '@deck.gl/maplibre'
+import { PathLayer, IconLayer } from '@deck.gl/layers'
+
+// MapLibre の map インスタンスに Deck.gl をオーバーレイとして追加
+const overlay = new MapboxOverlay({ layers: [...] })
+map.addControl(overlay)
+
+// レイヤー更新
+overlay.setProps({ layers: [trailLayer, iconLayer] })
+```
+
+#### なぜ以前の方法（`new Deck({ canvas })`）は失敗したか
+
+- Deck.gl が生成する WebGL コンテキストはデフォルトで不透明
+- `glOptions: { alpha: true }` + `clearColor: [0,0,0,0]` を設定しても
+  ブラウザの compositing 上の問題で MapLibre タイルが見えなかった
+- `@deck.gl/maplibre` の `MapboxOverlay` はこの問題を内部で解決している
+
+#### 移行時の性能目安
+
+| レイヤー | データ規模 | FPS |
+|---|---|---|
+| PathLayer（軌跡） | 100万点 | 60fps |
+| IconLayer（アイコン） | 1万機体 | 60fps |
 
 ---
 

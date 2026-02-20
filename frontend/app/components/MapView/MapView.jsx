@@ -1,7 +1,7 @@
 'use client'
 import { useEffect, useRef } from 'react'
 import maplibregl from 'maplibre-gl'
-import 'maplibre-gl/dist/maplibre-gl.css'
+// CSS は layout.jsx でグローバルに読み込み済み
 import useStore from '@/app/store/useStore'
 import { TILE_PROVIDERS } from '@/app/utils/tileProviders'
 import { getInterpolatedPositions, getTrailPoints } from '@/app/utils/geoUtils'
@@ -77,6 +77,9 @@ export default function MapView() {
     })
 
     mapRef.current = map
+
+    // コンテナサイズが確定してから MapLibre に通知
+    requestAnimationFrame(() => { map.resize() })
 
     return () => {
       Object.values(markersRef.current).forEach(({ marker }) => marker.remove())
@@ -160,7 +163,12 @@ export default function MapView() {
     })
   }, [tracks, currentTime, trailMode, trailWindowMinutes, iconSize])
 
-  return <div ref={mapContainer} className="absolute inset-0" />
+  return (
+    <div
+      ref={mapContainer}
+      style={{ position: 'absolute', top: 0, right: 0, bottom: 0, left: 0 }}
+    />
+  )
 }
 
 // ── アイコン要素ユーティリティ ─────────────────────────────────────
