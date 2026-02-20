@@ -151,14 +151,16 @@ export default function MapView() {
 
       const existing = markersRef.current[track.id]
       if (!existing) {
-        const el = createIconEl(track.iconType, track.color, iconSize, point.direction)
-        const marker = new maplibregl.Marker({ element: el, rotation: 0 })
+        const el = createIconEl(track.iconType, track.color, iconSize)
+        // rotation は MapLibre の API で管理（el.style.transform を上書きしないため）
+        const marker = new maplibregl.Marker({ element: el, rotation: point.direction })
           .setLngLat([point.lon, point.lat])
           .addTo(map)
         markersRef.current[track.id] = { marker, el }
       } else {
         existing.marker.setLngLat([point.lon, point.lat])
-        updateIconEl(existing.el, track.color, iconSize, point.direction)
+        existing.marker.setRotation(point.direction)
+        updateIconEl(existing.el, track.color, iconSize, track.iconType)
       }
     })
   }, [tracks, currentTime, trailMode, trailWindowMinutes, iconSize])
@@ -173,17 +175,18 @@ export default function MapView() {
 
 // ── アイコン要素ユーティリティ ─────────────────────────────────────
 
-function createIconEl(iconType, color, size, direction) {
+// direction は渡さない。回転は marker.setRotation() で MapLibre に任せる
+function createIconEl(iconType, color, size) {
   const el = document.createElement('div')
   el.style.width = `${size}px`
   el.style.height = `${size}px`
   el.style.pointerEvents = 'none'
   el.style.userSelect = 'none'
-  updateIconEl(el, color, size, direction, iconType)
+  updateIconEl(el, color, size, iconType)
   return el
 }
 
-function updateIconEl(el, color, size, direction, iconType) {
+function updateIconEl(el, color, size, iconType) {
   const type = iconType || el.dataset.iconType || 'airplane'
   el.dataset.iconType = type
   const svg = ICON_SVGS[type] || ICON_SVGS.airplane
@@ -191,7 +194,7 @@ function updateIconEl(el, color, size, direction, iconType) {
   el.innerHTML = colored
   el.style.width = `${size}px`
   el.style.height = `${size}px`
-  el.style.transform = `rotate(${direction}deg)`
+  // ★ transform は設定しない（MapLibre が位置決めに使うため上書き禁止）
 
   // SVGにスタイルを付与
   const svgEl = el.querySelector('svg')
