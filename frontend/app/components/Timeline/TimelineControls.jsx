@@ -4,10 +4,10 @@ import useStore from '@/app/store/useStore'
 
 const SPEED_OPTIONS = [
   { label: '×1', value: 1 },
-  { label: '×5', value: 5 },
   { label: '×10', value: 10 },
-  { label: '×30', value: 30 },
   { label: '×100', value: 100 },
+  { label: '×1K', value: 1000 },
+  { label: '×10K', value: 10000 },
 ]
 
 function formatUtc(ms) {
