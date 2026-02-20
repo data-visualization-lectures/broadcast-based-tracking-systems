@@ -5,6 +5,7 @@ import { getInterpolatedPositions } from '@/app/utils/geoUtils'
 
 const FPS_OPTIONS = [1, 2, 5, 10]
 const WIDTH_OPTIONS = [480, 720, 1080]
+const MAX_EXPORT_FRAMES = 600  // フレーム上限（これ以上は等間隔で間引き）
 const rawBackendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8000'
 const BACKEND_URL = /^https?:\/\//.test(rawBackendUrl) ? rawBackendUrl : `https://${rawBackendUrl}`
 
@@ -18,6 +19,15 @@ export default function ExportPanel() {
   const timeRange = useStore((s) => s.timeRange)
   const tracks = useStore((s) => s.tracks)
   const mapInstance = useStore((s) => s.mapInstance)
+  const playbackSpeed = useStore((s) => s.playbackSpeed)
+
+  // 再生速度と FPS から動画の推定フレーム数・尺を計算
+  // 1フレーム = playbackSpeed × 1000ms ÷ exportFps のシミュレーション時間
+  const totalDurationMs = timeRange.end - timeRange.start
+  const simMsPerFrame = (playbackSpeed * 1000) / exportFps
+  const idealFrames = hasData ? Math.ceil(totalDurationMs / simMsPerFrame) : 0
+  const exportFrameCount = Math.min(idealFrames, MAX_EXPORT_FRAMES)
+  const exportVideoDurationSec = hasData ? Math.round(exportFrameCount / exportFps) : 0
 
   const [progress, setProgress] = useState(null) // 0-100 or null
   const [phase, setPhase] = useState('')
@@ -39,18 +49,18 @@ export default function ExportPanel() {
 
     try {
       if (exportMethod === 'client-gif') {
-        await exportClientGif({ timeRange, tracks, exportFps, exportWidth, setProgress, setPhase, cancelRef, mapInstance })
+        await exportClientGif({ timeRange, tracks, exportFps, exportWidth, playbackSpeed, setProgress, setPhase, cancelRef, mapInstance })
       } else if (exportMethod === 'zip') {
-        await exportZip({ timeRange, tracks, exportFps, exportWidth, setProgress, setPhase, cancelRef, BACKEND_URL, mapInstance })
+        await exportZip({ timeRange, tracks, exportFps, exportWidth, playbackSpeed, setProgress, setPhase, cancelRef, BACKEND_URL, mapInstance })
       } else if (exportMethod === 'server-gif') {
-        await exportServerGif({ timeRange, tracks, exportFps, exportWidth, setProgress, setPhase, cancelRef, BACKEND_URL, mapInstance })
+        await exportServerGif({ timeRange, tracks, exportFps, exportWidth, playbackSpeed, setProgress, setPhase, cancelRef, BACKEND_URL, mapInstance })
       }
     } catch (e) {
       setError(e.message || 'エクスポートに失敗しました')
       setProgress(null)
       setPhase('')
     }
-  }, [exportMethod, exportFps, exportWidth, timeRange, tracks, hasData, mapInstance])
+  }, [exportMethod, exportFps, exportWidth, playbackSpeed, timeRange, tracks, hasData, mapInstance])
 
   return (
     <div className="space-y-3">
@@ -109,6 +119,19 @@ export default function ExportPanel() {
           ))}
         </div>
       </div>
+
+      {/* 出力プレビュー */}
+      {hasData && (
+        <div className="text-xs text-gray-500 bg-gray-800 rounded px-2 py-1.5 space-y-0.5">
+          <div>再生速度 ×{playbackSpeed} / {exportFps}fps</div>
+          <div>
+            → {exportFrameCount}フレーム・約{exportVideoDurationSec}秒の動画
+            {idealFrames > MAX_EXPORT_FRAMES && (
+              <span className="text-yellow-500"> ※上限{MAX_EXPORT_FRAMES}fで間引き</span>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* 開始ボタン */}
       <button
@@ -266,12 +289,12 @@ function renderFrame(tracks, currentTime, width, bgCanvas, toXY) {
   return canvas
 }
 
-async function exportClientGif({ timeRange, tracks, exportFps, exportWidth, setProgress, setPhase, cancelRef, mapInstance }) {
+async function exportClientGif({ timeRange, tracks, exportFps, exportWidth, playbackSpeed, setProgress, setPhase, cancelRef, mapInstance }) {
   const { default: GIF } = await import('gif.js')
   const totalDuration = timeRange.end - timeRange.start
-  const frameInterval = 1000 / exportFps
-  const simStepMs = totalDuration / Math.ceil(totalDuration / (frameInterval * 10))
-  const frameCount = Math.ceil(totalDuration / (simStepMs * exportFps)) || 30
+  // 再生速度と FPS から1フレームあたりのシミュレーション時間を決定
+  const simMsPerFrame = (playbackSpeed * 1000) / exportFps
+  const frameCount = Math.min(Math.ceil(totalDuration / simMsPerFrame), MAX_EXPORT_FRAMES) || 1
 
   const { bgCanvas, toXY } = await captureMapBackground(mapInstance, exportWidth)
 
@@ -317,9 +340,10 @@ async function exportClientGif({ timeRange, tracks, exportFps, exportWidth, setP
   })
 }
 
-async function exportZip({ timeRange, tracks, exportFps, exportWidth, setProgress, setPhase, cancelRef, BACKEND_URL, mapInstance }) {
+async function exportZip({ timeRange, tracks, exportFps, exportWidth, playbackSpeed, setProgress, setPhase, cancelRef, BACKEND_URL, mapInstance }) {
   const totalDuration = timeRange.end - timeRange.start
-  const frameCount = Math.min(Math.ceil(totalDuration / 1000) * exportFps, 300)
+  const simMsPerFrame = (playbackSpeed * 1000) / exportFps
+  const frameCount = Math.min(Math.ceil(totalDuration / simMsPerFrame), MAX_EXPORT_FRAMES) || 1
   const frames = []
 
   const { bgCanvas, toXY } = await captureMapBackground(mapInstance, exportWidth)
@@ -353,9 +377,10 @@ async function exportZip({ timeRange, tracks, exportFps, exportWidth, setProgres
   setPhase('')
 }
 
-async function exportServerGif({ timeRange, tracks, exportFps, exportWidth, setProgress, setPhase, cancelRef, BACKEND_URL, mapInstance }) {
+async function exportServerGif({ timeRange, tracks, exportFps, exportWidth, playbackSpeed, setProgress, setPhase, cancelRef, BACKEND_URL, mapInstance }) {
   const totalDuration = timeRange.end - timeRange.start
-  const frameCount = Math.min(Math.ceil(totalDuration / 1000) * exportFps, 200)
+  const simMsPerFrame = (playbackSpeed * 1000) / exportFps
+  const frameCount = Math.min(Math.ceil(totalDuration / simMsPerFrame), MAX_EXPORT_FRAMES) || 1
   const frames = []
 
   const { bgCanvas, toXY } = await captureMapBackground(mapInstance, exportWidth)
