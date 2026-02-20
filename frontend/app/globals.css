@@ -21,11 +21,22 @@ html, body {
 }
 
 .maplibregl-ctrl-group {
-  background: #1f2937 !important;
+  background: #ffffff !important;
+  border-radius: 4px !important;
+  overflow: hidden;
 }
 
 .maplibregl-ctrl-group button {
-  background-color: #374151 !important;
+  background-color: #ffffff !important;
+}
+
+.maplibregl-ctrl-group button:hover {
+  background-color: #e5e7eb !important;
+}
+
+/* アイコン SVG を暗色に */
+.maplibregl-ctrl-icon {
+  filter: brightness(0) !important;
 }
 
 /* スクロールバー */
