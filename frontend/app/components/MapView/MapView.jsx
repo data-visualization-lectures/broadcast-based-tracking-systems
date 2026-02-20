@@ -88,10 +88,12 @@ export default function MapView() {
     mapRef.current = map
     setMapInstance(map)
 
-    // コンテナサイズが確定してから MapLibre に通知
-    requestAnimationFrame(() => { map.resize() })
+    // コンテナサイズが確定・変化したとき MapLibre に通知（16:9 ボックス対応）
+    const ro = new ResizeObserver(() => { map.resize() })
+    ro.observe(mapContainer.current)
 
     return () => {
+      ro.disconnect()
       Object.values(markersRef.current).forEach(({ marker }) => marker.remove())
       markersRef.current = {}
       styleLoadedRef.current = false
