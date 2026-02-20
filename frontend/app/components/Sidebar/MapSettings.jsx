@@ -37,15 +37,16 @@ export default function MapSettings() {
         </select>
       </div>
 
-      {/* ズームレベル */}
+      {/* ズームレベル（MapLibre zoom: 0=世界全体, 22=建物レベル） */}
       <div>
         <label className="text-xs text-gray-400 block mb-1">
-          ズームレベル: {mapZoom.toFixed(1)}
+          ズームレベル: <span className="text-white font-mono">{mapZoom.toFixed(1)}</span>
+          <span className="text-gray-600 ml-1 text-xs">（0: 世界 ↔ 22: 建物）</span>
         </label>
         <input
           type="range"
-          min={1}
-          max={18}
+          min={0}
+          max={22}
           step={0.5}
           value={mapZoom}
           onChange={(e) => setMapZoom(Number(e.target.value))}
