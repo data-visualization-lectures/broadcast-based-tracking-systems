@@ -13,7 +13,8 @@ export default function MapView() {
   const mapContainer    = useRef(null)
   const mapRef          = useRef(null)
   const markersRef      = useRef({})   // { trackId: { marker, el } }
-  const progMoveRef     = useRef(false)
+  const progMoveRef     = useRef(false)  // true の間は jumpTo によるストア更新をスキップ
+  const userMovingRef   = useRef(false)  // ユーザーがドラッグ操作中は true
   const styleLoadedRef  = useRef(false)
   const isTileFirstRun  = useRef(true)
 
@@ -46,8 +47,14 @@ export default function MapView() {
     map.addControl(new maplibregl.NavigationControl(), 'top-right')
     map.addControl(new maplibregl.ScaleControl(), 'bottom-right')
 
-    // ユーザー操作で地図が動いたとき store を更新
-    map.on('move', () => {
+    // ユーザー操作の開始・終了を検出
+    // e.originalEvent がある = ユーザー起因、ない = jumpTo 等のプログラム起因
+    map.on('movestart', (e) => {
+      if (e.originalEvent) userMovingRef.current = true
+    })
+    // ドラッグ終了後に一度だけ store を更新（毎フレーム更新によるループを回避）
+    map.on('moveend', () => {
+      userMovingRef.current = false
       if (progMoveRef.current) return
       const c = map.getCenter()
       setMapCenter({ lat: c.lat, lon: c.lng })
@@ -106,6 +113,8 @@ export default function MapView() {
   // ── サイドバーからのセンター・ズーム変更 ─────────────────────────
   useEffect(() => {
     if (!mapRef.current) return
+    // ユーザーがドラッグ中なら jumpTo しない（操作を中断させない）
+    if (userMovingRef.current) return
     progMoveRef.current = true
     mapRef.current.jumpTo({ center: [mapCenterLon, mapCenterLat], zoom: mapZoom })
     const id = setTimeout(() => { progMoveRef.current = false }, 200)
