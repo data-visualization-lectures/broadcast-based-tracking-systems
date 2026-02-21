@@ -1,21 +1,20 @@
 'use client'
 import { useEffect, useRef } from 'react'
 import maplibregl from 'maplibre-gl'
+import { MapboxOverlay } from '@deck.gl/mapbox'
+import { PathLayer, IconLayer } from '@deck.gl/layers'
 // CSS は layout.jsx でグローバルに読み込み済み
 import useStore from '@/app/store/useStore'
 import { TILE_PROVIDERS } from '@/app/utils/tileProviders'
 import { getInterpolatedPositions, getTrailPoints } from '@/app/utils/geoUtils'
-import { ICON_SVGS } from '@/app/utils/iconConfig'
-
-const EMPTY_FC = { type: 'FeatureCollection', features: [] }
+import { ICON_SVGS, svgToDataUrl } from '@/app/utils/iconConfig'
 
 export default function MapView() {
   const mapContainer    = useRef(null)
   const mapRef          = useRef(null)
-  const markersRef      = useRef({})   // { trackId: { marker, el } }
+  const overlayRef      = useRef(null)   // Deck.gl MapboxOverlay
   const progMoveRef     = useRef(false)  // true の間は jumpTo によるストア更新をスキップ
   const userMovingRef   = useRef(false)  // ユーザーがドラッグ操作中は true
-  const styleLoadedRef  = useRef(false)
   const isTileFirstRun  = useRef(true)
 
   const tracks             = useStore((s) => s.tracks)
@@ -61,29 +60,10 @@ export default function MapView() {
       setMapZoom(map.getZoom())
     })
 
-    // スタイルロード完了後にトレイル用レイヤーを追加
-    const initLayers = () => {
-      styleLoadedRef.current = true
-      if (!map.getSource('trails')) {
-        map.addSource('trails', { type: 'geojson', data: EMPTY_FC })
-        map.addLayer({
-          id: 'trails',
-          type: 'line',
-          source: 'trails',
-          paint: {
-            'line-color': ['get', 'color'],
-            'line-width': 2,
-            'line-opacity': 0.85,
-          },
-        })
-      }
-    }
-
-    map.on('load', initLayers)
-    // setStyle 後も再実行
-    map.on('styledata', () => {
-      if (map.isStyleLoaded()) initLayers()
-    })
+    // Deck.gl オーバーレイを追加（MapLibre 上に別 canvas として重ねる）
+    const overlay = new MapboxOverlay({ interleaved: false, layers: [] })
+    map.addControl(overlay)
+    overlayRef.current = overlay
 
     mapRef.current = map
     setMapInstance(map)
@@ -94,9 +74,7 @@ export default function MapView() {
 
     return () => {
       ro.disconnect()
-      Object.values(markersRef.current).forEach(({ marker }) => marker.remove())
-      markersRef.current = {}
-      styleLoadedRef.current = false
+      overlayRef.current = null
       setMapInstance(null)
       map.remove()
       mapRef.current = null
@@ -108,7 +86,6 @@ export default function MapView() {
   useEffect(() => {
     if (isTileFirstRun.current) { isTileFirstRun.current = false; return }
     if (!mapRef.current) return
-    styleLoadedRef.current = false
     mapRef.current.setStyle(TILE_PROVIDERS[tileProvider]?.style || TILE_PROVIDERS.osm.style)
   }, [tileProvider])
 
@@ -123,60 +100,60 @@ export default function MapView() {
     return () => clearTimeout(id)
   }, [mapCenterLat, mapCenterLon, mapZoom])
 
-  // ── トレイル＆アイコン更新 ────────────────────────────────────────
+  // ── Deck.gl レイヤー更新（トレイル＆アイコン）────────────────────
   useEffect(() => {
-    const map = mapRef.current
-    if (!map) return
+    if (!overlayRef.current) return
 
-    // トレイル（GeoJSON）
-    if (styleLoadedRef.current && map.getSource('trails')) {
-      const features = tracks
-        .filter((t) => t.visible && t.points.length >= 2)
-        .map((track) => {
-          const pts = getTrailPoints(track.points, currentTime, trailMode, trailWindowMinutes)
-          if (pts.length < 2) return null
-          return {
-            type: 'Feature',
-            properties: { color: track.color },
-            geometry: {
-              type: 'LineString',
-              coordinates: pts.map((p) => [p.lon, p.lat]),
-            },
-          }
-        })
-        .filter(Boolean)
-      map.getSource('trails').setData({ type: 'FeatureCollection', features })
-    }
+    // ── PathLayer: トレイル ──
+    const trailData = tracks
+      .filter((t) => t.visible && t.points.length >= 2)
+      .flatMap((track) => {
+        const pts = getTrailPoints(track.points, currentTime, trailMode, trailWindowMinutes)
+        if (pts.length < 2) return []
+        return [{
+          path: pts.map((p) => [p.lon, p.lat]),
+          color: hexToRgba(track.color, 217),  // 0.85 opacity
+        }]
+      })
 
-    // アイコン（HTML Marker）
+    // ── IconLayer: アイコン ──
     const positions = getInterpolatedPositions(tracks, currentTime)
-    const activeIds = new Set(positions.map(({ track }) => track.id))
+    const iconData = positions
+      .filter(({ track }) => track.visible)
+      .map(({ track, point }) => ({
+        coordinates: [point.lon, point.lat],
+        direction: point.direction || 0,
+        iconUrl: svgToDataUrl(ICON_SVGS[track.iconType] || ICON_SVGS.airplane, track.color),
+        size: iconSize,
+      }))
 
-    // 不要なマーカーを削除
-    Object.keys(markersRef.current).forEach((id) => {
-      if (!activeIds.has(id)) {
-        markersRef.current[id].marker.remove()
-        delete markersRef.current[id]
-      }
-    })
-
-    // 追加 or 更新
-    positions.forEach(({ track, point }) => {
-      if (!track.visible) return
-
-      const existing = markersRef.current[track.id]
-      if (!existing) {
-        const el = createIconEl(track.iconType, track.color, iconSize)
-        // rotation は MapLibre の API で管理（el.style.transform を上書きしないため）
-        const marker = new maplibregl.Marker({ element: el, rotation: point.direction })
-          .setLngLat([point.lon, point.lat])
-          .addTo(map)
-        markersRef.current[track.id] = { marker, el }
-      } else {
-        existing.marker.setLngLat([point.lon, point.lat])
-        existing.marker.setRotation(point.direction)
-        updateIconEl(existing.el, track.color, iconSize, track.iconType)
-      }
+    overlayRef.current.setProps({
+      layers: [
+        new PathLayer({
+          id: 'trails',
+          data: trailData,
+          getPath: (d) => d.path,
+          getColor: (d) => d.color,
+          getWidth: 2,
+          widthUnits: 'pixels',
+          widthMinPixels: 1,
+        }),
+        new IconLayer({
+          id: 'icons',
+          data: iconData,
+          getPosition: (d) => d.coordinates,
+          getIcon: (d) => ({
+            url: d.iconUrl,
+            width: 128,
+            height: 128,
+            anchorY: 64,  // 中心基準
+          }),
+          getSize: (d) => d.size,
+          // Deck.gl の角度は CCW（反時計回り）なので、CW のコンパス方位を符号反転
+          getAngle: (d) => -d.direction,
+          sizeUnits: 'pixels',
+        }),
+      ],
     })
   }, [tracks, currentTime, trailMode, trailWindowMinutes, iconSize])
 
@@ -188,35 +165,11 @@ export default function MapView() {
   )
 }
 
-// ── アイコン要素ユーティリティ ─────────────────────────────────────
+// ── ユーティリティ ─────────────────────────────────────────────────
 
-// direction は渡さない。回転は marker.setRotation() で MapLibre に任せる
-function createIconEl(iconType, color, size) {
-  const el = document.createElement('div')
-  el.style.width = `${size}px`
-  el.style.height = `${size}px`
-  el.style.pointerEvents = 'none'
-  el.style.userSelect = 'none'
-  updateIconEl(el, color, size, iconType)
-  return el
-}
-
-function updateIconEl(el, color, size, iconType) {
-  const type = iconType || el.dataset.iconType || 'airplane'
-  el.dataset.iconType = type
-  const svg = ICON_SVGS[type] || ICON_SVGS.airplane
-  const colored = svg.replace(/currentColor/g, color)
-  el.innerHTML = colored
-  el.style.width = `${size}px`
-  el.style.height = `${size}px`
-  // ★ transform は設定しない（MapLibre が位置決めに使うため上書き禁止）
-
-  // SVGにスタイルを付与
-  const svgEl = el.querySelector('svg')
-  if (svgEl) {
-    svgEl.style.width = '100%'
-    svgEl.style.height = '100%'
-    svgEl.style.display = 'block'
-    svgEl.setAttribute('fill', color)
-  }
+function hexToRgba(hex, alpha = 255) {
+  const r = parseInt(hex.slice(1, 3), 16)
+  const g = parseInt(hex.slice(3, 5), 16)
+  const b = parseInt(hex.slice(5, 7), 16)
+  return [r, g, b, alpha]
 }
