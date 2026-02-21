@@ -19,8 +19,6 @@ export default function MapSettings() {
 
   return (
     <div className="space-y-3">
-      <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider">地図設定</h3>
-
       {/* タイル選択 */}
       <div>
         <label className="text-xs text-gray-400 block mb-1">ベースマップ</label>

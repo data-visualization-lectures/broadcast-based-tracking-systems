@@ -5,6 +5,7 @@ import TrackList from '@/app/components/Sidebar/TrackList'
 import MapSettings from '@/app/components/Sidebar/MapSettings'
 import ExportPanel from '@/app/components/Export/ExportPanel'
 import TimelineControls from '@/app/components/Timeline/TimelineControls'
+import Accordion from '@/app/components/Sidebar/Accordion'
 
 // MapLibre GL JS は SSR 非対応のため dynamic import
 const MapView = dynamic(() => import('@/app/components/MapView/MapView'), {
@@ -30,8 +31,12 @@ export default function Page() {
         <div className="flex-1 overflow-y-auto px-4 py-4 space-y-5">
           <DataUpload />
           <TrackList />
-          <MapSettings />
-          <ExportPanel />
+          <Accordion title="地図設定" defaultOpen={true}>
+            <MapSettings />
+          </Accordion>
+          <Accordion title="エクスポート">
+            <ExportPanel />
+          </Accordion>
         </div>
       </aside>
 

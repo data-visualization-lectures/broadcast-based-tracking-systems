@@ -84,8 +84,6 @@ export default function ExportPanel() {
 
   return (
     <div className="space-y-3">
-      <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider">エクスポート</h3>
-
       {/* 方式 */}
       <div>
         <label className="text-xs text-gray-400 block mb-1">方式</label>
