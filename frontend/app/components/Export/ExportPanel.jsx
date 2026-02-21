@@ -2,6 +2,7 @@
 import { useState, useRef, useCallback } from 'react'
 import useStore from '@/app/store/useStore'
 import { getInterpolatedPositions } from '@/app/utils/geoUtils'
+import { ICON_SVGS } from '@/app/utils/iconConfig'
 
 const FPS_OPTIONS = [1, 2, 5, 10]
 const WIDTH_OPTIONS = [480, 720, 1080]
@@ -70,8 +71,11 @@ export default function ExportPanel() {
     setIsPreviewing(true)
     setPreviewUrl(null)
     try {
-      const { bgCanvas, toXY } = await captureMapBackground(mapInstance, exportWidth)
-      const canvas = renderFrame(tracks, currentTime, exportWidth, bgCanvas, toXY)
+      const [{ bgCanvas, toXY }, iconCache] = await Promise.all([
+        captureMapBackground(mapInstance, exportWidth),
+        buildIconCache(tracks, exportWidth),
+      ])
+      const canvas = renderFrame(tracks, currentTime, exportWidth, bgCanvas, toXY, iconCache)
       setPreviewUrl(canvas.toDataURL('image/png'))
     } finally {
       setIsPreviewing(false)
@@ -206,6 +210,32 @@ export default function ExportPanel() {
 // ---- エクスポート実装 ----
 
 /**
+ * 各トラックのアイコン SVG を Image オブジェクトに変換してキャッシュする
+ * key: `${iconType}_${color}` → Image
+ */
+async function buildIconCache(tracks, exportWidth) {
+  const size = Math.round(exportWidth / 30)
+  const cache = {}
+  await Promise.all(
+    tracks.filter((t) => t.visible).map(async (track) => {
+      const type = track.iconType || 'airplane'
+      const key = `${type}_${track.color}`
+      if (cache[key]) return
+      const svg = (ICON_SVGS[type] || ICON_SVGS.airplane).replace(/currentColor/g, track.color)
+      const url = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`
+      const img = await new Promise((resolve) => {
+        const image = new Image(size, size)
+        image.onload = () => resolve(image)
+        image.onerror = () => resolve(null)
+        image.src = url
+      })
+      if (img) cache[key] = img
+    })
+  )
+  return cache
+}
+
+/**
  * エクスポート開始時にマップの背景と投影関数をキャプチャする
  * bgCanvas: マップタイルを描画した静止背景 Canvas
  * toXY: (lon, lat) → {x, y} エクスポートサイズ座標系
@@ -277,7 +307,7 @@ async function captureMapBackground(mapInstance, exportWidth) {
   }
 }
 
-function renderFrame(tracks, currentTime, width, bgCanvas, toXY) {
+function renderFrame(tracks, currentTime, width, bgCanvas, toXY, iconCache = {}) {
   const height = Math.round(width * 0.5625)
   const canvas = document.createElement('canvas')
   canvas.width = width
@@ -326,21 +356,29 @@ function renderFrame(tracks, currentTime, width, bgCanvas, toXY) {
     ctx.stroke()
   })
 
-  // 現在位置アイコンを描画
+  // 現在位置アイコンを描画（iconCache に SVG Image があれば使い、なければ三角フォールバック）
+  const iconSize = Math.round(width / 30)
   getInterpolatedPositions(tracks, currentTime).forEach(({ track, point }) => {
     if (!track.visible) return
     const { x, y } = project(point.lon, point.lat)
-    ctx.fillStyle = track.color
+    const cacheKey = `${track.iconType || 'airplane'}_${track.color}`
+    const iconImg = iconCache[cacheKey]
     ctx.save()
     ctx.translate(x, y)
     ctx.rotate((point.direction * Math.PI) / 180)
-    ctx.beginPath()
-    ctx.moveTo(0, -8)
-    ctx.lineTo(5, 8)
-    ctx.lineTo(0, 4)
-    ctx.lineTo(-5, 8)
-    ctx.closePath()
-    ctx.fill()
+    if (iconImg) {
+      ctx.drawImage(iconImg, -iconSize / 2, -iconSize / 2, iconSize, iconSize)
+    } else {
+      // フォールバック: 塗りつぶし三角
+      ctx.fillStyle = track.color
+      ctx.beginPath()
+      ctx.moveTo(0, -8)
+      ctx.lineTo(5, 8)
+      ctx.lineTo(0, 4)
+      ctx.lineTo(-5, 8)
+      ctx.closePath()
+      ctx.fill()
+    }
     ctx.restore()
   })
 
@@ -354,7 +392,10 @@ async function exportClientGif({ timeRange, tracks, exportFps, exportWidth, play
   const simMsPerFrame = (playbackSpeed * 1000) / exportFps
   const frameCount = Math.min(Math.ceil(totalDuration / simMsPerFrame), MAX_EXPORT_FRAMES) || 1
 
-  const { bgCanvas, toXY } = await captureMapBackground(mapInstance, exportWidth)
+  const [{ bgCanvas, toXY }, iconCache] = await Promise.all([
+    captureMapBackground(mapInstance, exportWidth),
+    buildIconCache(tracks, exportWidth),
+  ])
 
   const gif = new GIF({
     workers: 2,
@@ -369,7 +410,7 @@ async function exportClientGif({ timeRange, tracks, exportFps, exportWidth, play
   for (let i = 0; i <= frameCount; i++) {
     if (cancelRef.current) return
     const t = timeRange.start + (totalDuration * i) / frameCount
-    const canvas = renderFrame(tracks, t, exportWidth, bgCanvas, toXY)
+    const canvas = renderFrame(tracks, t, exportWidth, bgCanvas, toXY, iconCache)
     gif.addFrame(canvas, { delay: Math.round(1000 / exportFps), copy: true })
     setProgress(Math.round(((i + 1) / (frameCount + 1)) * 70))
     await Promise.resolve() // React が進捗バーを更新できるよう毎フレーム yield
@@ -404,13 +445,16 @@ async function exportZip({ timeRange, tracks, exportFps, exportWidth, playbackSp
   const frameCount = Math.min(Math.ceil(totalDuration / simMsPerFrame), MAX_EXPORT_FRAMES) || 1
   const frames = []
 
-  const { bgCanvas, toXY } = await captureMapBackground(mapInstance, exportWidth)
+  const [{ bgCanvas, toXY }, iconCache] = await Promise.all([
+    captureMapBackground(mapInstance, exportWidth),
+    buildIconCache(tracks, exportWidth),
+  ])
 
   setPhase('フレーム生成中...')
   for (let i = 0; i <= frameCount; i++) {
     if (cancelRef.current) return
     const t = timeRange.start + (totalDuration * i) / frameCount
-    const canvas = renderFrame(tracks, t, exportWidth, bgCanvas, toXY)
+    const canvas = renderFrame(tracks, t, exportWidth, bgCanvas, toXY, iconCache)
     frames.push(canvas.toDataURL('image/png').split(',')[1])
     setProgress(Math.round(((i + 1) / (frameCount + 1)) * 70))
     await Promise.resolve()
@@ -441,13 +485,16 @@ async function exportServerGif({ timeRange, tracks, exportFps, exportWidth, play
   const frameCount = Math.min(Math.ceil(totalDuration / simMsPerFrame), MAX_EXPORT_FRAMES) || 1
   const frames = []
 
-  const { bgCanvas, toXY } = await captureMapBackground(mapInstance, exportWidth)
+  const [{ bgCanvas, toXY }, iconCache] = await Promise.all([
+    captureMapBackground(mapInstance, exportWidth),
+    buildIconCache(tracks, exportWidth),
+  ])
 
   setPhase('フレーム生成中...')
   for (let i = 0; i <= frameCount; i++) {
     if (cancelRef.current) return
     const t = timeRange.start + (totalDuration * i) / frameCount
-    const canvas = renderFrame(tracks, t, exportWidth, bgCanvas, toXY)
+    const canvas = renderFrame(tracks, t, exportWidth, bgCanvas, toXY, iconCache)
     frames.push(canvas.toDataURL('image/png').split(',')[1])
     setProgress(Math.round(((i + 1) / (frameCount + 1)) * 70))
     await Promise.resolve()

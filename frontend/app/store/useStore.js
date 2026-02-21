@@ -21,7 +21,7 @@ const useStore = create((set, get) => ({
   // 地図
   mapCenter: { lat: 35.0, lon: 135.0 },
   mapZoom: 4,
-  tileProvider: 'osm',
+  tileProvider: 'esri_satellite',
 
   // 表示設定
   trailMode: 'full',
