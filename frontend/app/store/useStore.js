@@ -1,8 +1,8 @@
 import { create } from 'zustand'
 
 const COLORS = [
-  '#ef4444', '#3b82f6', '#22c55e', '#f59e0b',
-  '#a855f7', '#ec4899', '#06b6d4', '#84cc16',
+  '#ffffff', '#ef4444', '#3b82f6', '#22c55e',
+  '#f59e0b', '#a855f7', '#ec4899', '#06b6d4',
 ]
 
 let colorIndex = 0
