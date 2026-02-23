@@ -13,6 +13,7 @@ export default function MapView() {
   const mapContainer    = useRef(null)
   const mapRef          = useRef(null)
   const overlayRef      = useRef(null)   // Deck.gl MapboxOverlay
+  const iconDefCacheRef = useRef(new Map()) // IconLayer auto-pack 用の安定キーキャッシュ
   const progMoveRef     = useRef(false)  // true の間は jumpTo によるストア更新をスキップ
   const userMovingRef   = useRef(false)  // ユーザーがドラッグ操作中は true
   const isTileFirstRun  = useRef(true)
@@ -104,6 +105,22 @@ export default function MapView() {
   useEffect(() => {
     if (!overlayRef.current) return
 
+    const getCachedIconDef = (track) => {
+      const type = track.iconType || 'airplane'
+      const key = `${type}_${track.color}`
+      if (iconDefCacheRef.current.has(key)) return iconDefCacheRef.current.get(key)
+
+      const iconDef = {
+        id: key,
+        url: svgToDataUrl(ICON_SVGS[type] || ICON_SVGS.airplane, track.color),
+        width: 128,
+        height: 128,
+        anchorY: 64, // 中心基準
+      }
+      iconDefCacheRef.current.set(key, iconDef)
+      return iconDef
+    }
+
     // ── PathLayer: トレイル ──
     const trailData = tracks
       .filter((t) => t.visible && t.points.length >= 2)
@@ -123,7 +140,7 @@ export default function MapView() {
       .map(({ track, point }) => ({
         coordinates: [point.lon, point.lat],
         direction: point.direction || 0,
-        iconUrl: svgToDataUrl(ICON_SVGS[track.iconType] || ICON_SVGS.airplane, track.color),
+        icon: getCachedIconDef(track),
         size: iconSize,
       }))
 
@@ -142,12 +159,7 @@ export default function MapView() {
           id: 'icons',
           data: iconData,
           getPosition: (d) => d.coordinates,
-          getIcon: (d) => ({
-            url: d.iconUrl,
-            width: 128,
-            height: 128,
-            anchorY: 64,  // 中心基準
-          }),
+          getIcon: (d) => d.icon,
           getSize: (d) => d.size,
           // Deck.gl の角度は CCW（反時計回り）なので、CW のコンパス方位を符号反転
           getAngle: (d) => -d.direction,

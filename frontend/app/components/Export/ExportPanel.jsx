@@ -137,9 +137,9 @@ export default function ExportPanel() {
         </div>
       </div>
 
-      {/* 幅 */}
+      {/* 解像度 */}
       <div>
-        <label className="text-xs text-gray-400 block mb-1">幅</label>
+        <label className="text-xs text-gray-400 block mb-1">解像度</label>
         <div className="flex gap-1">
           {WIDTH_OPTIONS.map((w) => (
             <button
