@@ -3,9 +3,14 @@ import { useState, useRef, useCallback } from 'react'
 import useStore from '@/app/store/useStore'
 import { getInterpolatedPositions } from '@/app/utils/geoUtils'
 import { ICON_SVGS } from '@/app/utils/iconConfig'
+import { TILE_PROVIDERS } from '@/app/utils/tileProviders'
 
 const FPS_OPTIONS = [1, 2, 5, 10]
 const WIDTH_OPTIONS = [480, 720, 1080]
+const DATETIME_MODE_OPTIONS = [
+  { value: 'utc', label: 'データそのまま (UTC)' },
+  { value: 'jst', label: '日本時間 (JST)' },
+]
 const MAX_EXPORT_FRAMES = 600  // フレーム上限（これ以上は等間隔で間引き）
 const rawBackendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8000'
 const BACKEND_URL = /^https?:\/\//.test(rawBackendUrl) ? rawBackendUrl : `https://${rawBackendUrl}`
@@ -14,14 +19,20 @@ export default function ExportPanel() {
   const exportMethod = useStore((s) => s.exportMethod)
   const exportFps = useStore((s) => s.exportFps)
   const exportWidth = useStore((s) => s.exportWidth)
+  const exportDrawDatetime = useStore((s) => s.exportDrawDatetime)
+  const exportDatetimeMode = useStore((s) => s.exportDatetimeMode)
+  const tileProvider = useStore((s) => s.tileProvider)
   const setExportMethod = useStore((s) => s.setExportMethod)
   const setExportFps = useStore((s) => s.setExportFps)
   const setExportWidth = useStore((s) => s.setExportWidth)
+  const setExportDrawDatetime = useStore((s) => s.setExportDrawDatetime)
+  const setExportDatetimeMode = useStore((s) => s.setExportDatetimeMode)
   const timeRange = useStore((s) => s.timeRange)
   const tracks = useStore((s) => s.tracks)
   const currentTime = useStore((s) => s.currentTime)
   const mapInstance = useStore((s) => s.mapInstance)
   const playbackSpeed = useStore((s) => s.playbackSpeed)
+  const datetimeTextColor = TILE_PROVIDERS[tileProvider]?.exportDatetimeTextColor || '#ffffff'
 
   const hasData = tracks.length > 0 && timeRange.end > timeRange.start
 
@@ -53,18 +64,18 @@ export default function ExportPanel() {
 
     try {
       if (exportMethod === 'client-gif') {
-        await exportClientGif({ timeRange, tracks, exportFps, exportWidth, playbackSpeed, setProgress, setPhase, cancelRef, mapInstance })
+        await exportClientGif({ timeRange, tracks, exportFps, exportWidth, playbackSpeed, exportDrawDatetime, exportDatetimeMode, datetimeTextColor, setProgress, setPhase, cancelRef, mapInstance })
       } else if (exportMethod === 'zip') {
-        await exportZip({ timeRange, tracks, exportFps, exportWidth, playbackSpeed, setProgress, setPhase, cancelRef, BACKEND_URL, mapInstance })
+        await exportZip({ timeRange, tracks, exportFps, exportWidth, playbackSpeed, exportDrawDatetime, exportDatetimeMode, datetimeTextColor, setProgress, setPhase, cancelRef, BACKEND_URL, mapInstance })
       } else if (exportMethod === 'server-gif') {
-        await exportServerGif({ timeRange, tracks, exportFps, exportWidth, playbackSpeed, setProgress, setPhase, cancelRef, BACKEND_URL, mapInstance })
+        await exportServerGif({ timeRange, tracks, exportFps, exportWidth, playbackSpeed, exportDrawDatetime, exportDatetimeMode, datetimeTextColor, setProgress, setPhase, cancelRef, BACKEND_URL, mapInstance })
       }
     } catch (e) {
       setError(e.message || 'エクスポートに失敗しました')
       setProgress(null)
       setPhase('')
     }
-  }, [exportMethod, exportFps, exportWidth, playbackSpeed, timeRange, tracks, hasData, mapInstance])
+  }, [exportMethod, exportFps, exportWidth, playbackSpeed, exportDrawDatetime, exportDatetimeMode, datetimeTextColor, timeRange, tracks, hasData, mapInstance])
 
   const handlePreview = useCallback(async () => {
     if (!hasData) return
@@ -75,12 +86,20 @@ export default function ExportPanel() {
         captureMapBackground(mapInstance, exportWidth),
         buildIconCache(tracks, exportWidth),
       ])
-      const canvas = renderFrame(tracks, currentTime, exportWidth, bgCanvas, toXY, iconCache)
+      const canvas = renderFrame(
+        tracks,
+        currentTime,
+        exportWidth,
+        bgCanvas,
+        toXY,
+        iconCache,
+        { drawDatetime: exportDrawDatetime, datetimeMode: exportDatetimeMode, datetimeTextColor }
+      )
       setPreviewUrl(canvas.toDataURL('image/png'))
     } finally {
       setIsPreviewing(false)
     }
-  }, [hasData, mapInstance, exportWidth, tracks, currentTime])
+  }, [hasData, mapInstance, exportWidth, tracks, currentTime, exportDrawDatetime, exportDatetimeMode, datetimeTextColor])
 
   return (
     <div className="space-y-3">
@@ -137,6 +156,37 @@ export default function ExportPanel() {
           ))}
         </div>
       </div>
+
+      {/* 日時描画 */}
+      <div className="bg-gray-800 rounded px-2 py-1.5 flex items-center justify-between">
+        <div>
+          <label className="text-xs text-gray-300">日時を描画</label>
+          <p className="text-[10px] text-gray-500 mt-0.5">中央下部 / 文字色: ベースマップ連動</p>
+        </div>
+        <input
+          type="checkbox"
+          checked={exportDrawDatetime}
+          onChange={(e) => setExportDrawDatetime(e.target.checked)}
+          className="h-4 w-4 accent-cyan-500 cursor-pointer"
+        />
+      </div>
+
+      {exportDrawDatetime && (
+        <div>
+          <label className="text-xs text-gray-400 block mb-1">日時形式</label>
+          <select
+            value={exportDatetimeMode}
+            onChange={(e) => setExportDatetimeMode(e.target.value)}
+            className="w-full bg-gray-700 text-xs text-white rounded px-2 py-1 border border-gray-600"
+          >
+            {DATETIME_MODE_OPTIONS.map((opt) => (
+              <option key={opt.value} value={opt.value}>
+                {opt.label}
+              </option>
+            ))}
+          </select>
+        </div>
+      )}
 
       {/* 出力プレビュー */}
       {hasData && (
@@ -305,7 +355,8 @@ async function captureMapBackground(mapInstance, exportWidth) {
   }
 }
 
-function renderFrame(tracks, currentTime, width, bgCanvas, toXY, iconCache = {}) {
+function renderFrame(tracks, currentTime, width, bgCanvas, toXY, iconCache = {}, options = {}) {
+  const { drawDatetime = false, datetimeMode = 'utc', datetimeTextColor = '#ffffff' } = options
   const height = Math.round(width * 0.5625)
   const canvas = document.createElement('canvas')
   canvas.width = width
@@ -324,7 +375,10 @@ function renderFrame(tracks, currentTime, width, bgCanvas, toXY, iconCache = {})
   let project = toXY
   if (!project) {
     const allPoints = tracks.flatMap((t) => t.points)
-    if (allPoints.length === 0) return canvas
+    if (allPoints.length === 0) {
+      if (drawDatetime) drawDatetimeLabel(ctx, width, height, currentTime, datetimeMode, datetimeTextColor)
+      return canvas
+    }
     const lats = allPoints.map((p) => p.lat)
     const lons = allPoints.map((p) => p.lon)
     const minLat = Math.min(...lats), maxLat = Math.max(...lats)
@@ -380,10 +434,11 @@ function renderFrame(tracks, currentTime, width, bgCanvas, toXY, iconCache = {})
     ctx.restore()
   })
 
+  if (drawDatetime) drawDatetimeLabel(ctx, width, height, currentTime, datetimeMode, datetimeTextColor)
   return canvas
 }
 
-async function exportClientGif({ timeRange, tracks, exportFps, exportWidth, playbackSpeed, setProgress, setPhase, cancelRef, mapInstance }) {
+async function exportClientGif({ timeRange, tracks, exportFps, exportWidth, playbackSpeed, exportDrawDatetime, exportDatetimeMode, datetimeTextColor, setProgress, setPhase, cancelRef, mapInstance }) {
   const { default: GIF } = await import('gif.js')
   const totalDuration = timeRange.end - timeRange.start
   // 再生速度と FPS から1フレームあたりのシミュレーション時間を決定
@@ -408,7 +463,11 @@ async function exportClientGif({ timeRange, tracks, exportFps, exportWidth, play
   for (let i = 0; i <= frameCount; i++) {
     if (cancelRef.current) return
     const t = timeRange.start + (totalDuration * i) / frameCount
-    const canvas = renderFrame(tracks, t, exportWidth, bgCanvas, toXY, iconCache)
+    const canvas = renderFrame(tracks, t, exportWidth, bgCanvas, toXY, iconCache, {
+      drawDatetime: exportDrawDatetime,
+      datetimeMode: exportDatetimeMode,
+      datetimeTextColor,
+    })
     gif.addFrame(canvas, { delay: Math.round(1000 / exportFps), copy: true })
     setProgress(Math.round(((i + 1) / (frameCount + 1)) * 70))
     await Promise.resolve() // React が進捗バーを更新できるよう毎フレーム yield
@@ -437,7 +496,7 @@ async function exportClientGif({ timeRange, tracks, exportFps, exportWidth, play
   })
 }
 
-async function exportZip({ timeRange, tracks, exportFps, exportWidth, playbackSpeed, setProgress, setPhase, cancelRef, BACKEND_URL, mapInstance }) {
+async function exportZip({ timeRange, tracks, exportFps, exportWidth, playbackSpeed, exportDrawDatetime, exportDatetimeMode, datetimeTextColor, setProgress, setPhase, cancelRef, BACKEND_URL, mapInstance }) {
   const totalDuration = timeRange.end - timeRange.start
   const simMsPerFrame = (playbackSpeed * 1000) / exportFps
   const frameCount = Math.min(Math.ceil(totalDuration / simMsPerFrame), MAX_EXPORT_FRAMES) || 1
@@ -452,7 +511,11 @@ async function exportZip({ timeRange, tracks, exportFps, exportWidth, playbackSp
   for (let i = 0; i <= frameCount; i++) {
     if (cancelRef.current) return
     const t = timeRange.start + (totalDuration * i) / frameCount
-    const canvas = renderFrame(tracks, t, exportWidth, bgCanvas, toXY, iconCache)
+    const canvas = renderFrame(tracks, t, exportWidth, bgCanvas, toXY, iconCache, {
+      drawDatetime: exportDrawDatetime,
+      datetimeMode: exportDatetimeMode,
+      datetimeTextColor,
+    })
     frames.push(canvas.toDataURL('image/png').split(',')[1])
     setProgress(Math.round(((i + 1) / (frameCount + 1)) * 70))
     await Promise.resolve()
@@ -477,7 +540,7 @@ async function exportZip({ timeRange, tracks, exportFps, exportWidth, playbackSp
   setPhase('')
 }
 
-async function exportServerGif({ timeRange, tracks, exportFps, exportWidth, playbackSpeed, setProgress, setPhase, cancelRef, BACKEND_URL, mapInstance }) {
+async function exportServerGif({ timeRange, tracks, exportFps, exportWidth, playbackSpeed, exportDrawDatetime, exportDatetimeMode, datetimeTextColor, setProgress, setPhase, cancelRef, BACKEND_URL, mapInstance }) {
   const totalDuration = timeRange.end - timeRange.start
   const simMsPerFrame = (playbackSpeed * 1000) / exportFps
   const frameCount = Math.min(Math.ceil(totalDuration / simMsPerFrame), MAX_EXPORT_FRAMES) || 1
@@ -492,7 +555,11 @@ async function exportServerGif({ timeRange, tracks, exportFps, exportWidth, play
   for (let i = 0; i <= frameCount; i++) {
     if (cancelRef.current) return
     const t = timeRange.start + (totalDuration * i) / frameCount
-    const canvas = renderFrame(tracks, t, exportWidth, bgCanvas, toXY, iconCache)
+    const canvas = renderFrame(tracks, t, exportWidth, bgCanvas, toXY, iconCache, {
+      drawDatetime: exportDrawDatetime,
+      datetimeMode: exportDatetimeMode,
+      datetimeTextColor,
+    })
     frames.push(canvas.toDataURL('image/png').split(',')[1])
     setProgress(Math.round(((i + 1) / (frameCount + 1)) * 70))
     await Promise.resolve()
@@ -515,4 +582,26 @@ async function exportServerGif({ timeRange, tracks, exportFps, exportWidth, play
   URL.revokeObjectURL(url)
   setProgress(null)
   setPhase('')
+}
+
+function drawDatetimeLabel(ctx, width, height, currentTime, datetimeMode, textColor) {
+  const label = formatDatetimeForExport(currentTime, datetimeMode)
+  if (!label) return
+  const fontSize = Math.max(14, Math.round(width / 40))
+  const bottomMargin = Math.max(10, Math.round(height / 35))
+  ctx.save()
+  ctx.font = `${fontSize}px monospace`
+  ctx.textAlign = 'center'
+  ctx.textBaseline = 'bottom'
+  ctx.fillStyle = textColor
+  ctx.fillText(label, width / 2, height - bottomMargin)
+  ctx.restore()
+}
+
+function formatDatetimeForExport(ms, mode = 'utc') {
+  if (!Number.isFinite(ms)) return ''
+  const isJst = mode === 'jst'
+  const offsetMs = isJst ? 9 * 60 * 60 * 1000 : 0
+  const label = new Date(ms + offsetMs).toISOString().replace('T', ' ').slice(0, 19)
+  return `${label} ${isJst ? 'JST' : 'UTC'}`
 }

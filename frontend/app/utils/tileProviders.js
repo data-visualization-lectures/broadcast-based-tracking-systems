@@ -1,6 +1,7 @@
 export const TILE_PROVIDERS = {
   osm: {
     label: 'OpenStreetMap',
+    exportDatetimeTextColor: '#000000',
     style: {
       version: 8,
       sources: {
@@ -16,6 +17,7 @@ export const TILE_PROVIDERS = {
   },
   carto_light: {
     label: 'CartoDB Positron',
+    exportDatetimeTextColor: '#000000',
     style: {
       version: 8,
       sources: {
@@ -31,6 +33,7 @@ export const TILE_PROVIDERS = {
   },
   carto_dark: {
     label: 'CartoDB Dark',
+    exportDatetimeTextColor: '#ffffff',
     style: {
       version: 8,
       sources: {
@@ -46,6 +49,7 @@ export const TILE_PROVIDERS = {
   },
   esri_satellite: {
     label: 'ESRI 衛星',
+    exportDatetimeTextColor: '#ffffff',
     style: {
       version: 8,
       sources: {
@@ -63,6 +67,7 @@ export const TILE_PROVIDERS = {
   },
   gsi_std: {
     label: '地理院タイル（標準地図）',
+    exportDatetimeTextColor: '#000000',
     style: {
       version: 8,
       sources: {

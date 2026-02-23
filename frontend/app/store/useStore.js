@@ -32,6 +32,8 @@ const useStore = create((set, get) => ({
   exportMethod: 'client-gif',
   exportFps: 5,
   exportWidth: 720,
+  exportDrawDatetime: false,
+  exportDatetimeMode: 'utc',
 
   // MapLibre インスタンス（エクスポート用キャプチャに使用）
   mapInstance: null,
@@ -82,6 +84,8 @@ const useStore = create((set, get) => ({
   setExportMethod: (m) => set({ exportMethod: m }),
   setExportFps: (n) => set({ exportFps: n }),
   setExportWidth: (n) => set({ exportWidth: n }),
+  setExportDrawDatetime: (v) => set({ exportDrawDatetime: v }),
+  setExportDatetimeMode: (m) => set({ exportDatetimeMode: m }),
   setMapInstance: (map) => set({ mapInstance: map }),
 
   fitAll: () => {
