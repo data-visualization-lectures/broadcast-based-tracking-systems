@@ -41,20 +41,10 @@ export default function Page() {
       </aside>
 
       {/* メインエリア */}
-      <main className="flex-1 flex flex-col overflow-hidden min-h-0">
-        {/* 地図: 16:9 アスペクト比で中央配置（動画出力と一致させる） */}
-        <div className="flex-1 min-h-0 flex items-center justify-center bg-black overflow-hidden">
-          <div
-            style={{
-              aspectRatio: '16/9',
-              height: '100%',
-              width: '100%',
-              maxWidth: '100%',
-              position: 'relative',
-            }}
-          >
-            <MapView />
-          </div>
+      <main className="flex-1 flex flex-col overflow-hidden min-h-0 bg-black">
+        {/* 地図: フルサイズで配置 */}
+        <div className="flex-1 min-h-0 relative overflow-hidden">
+          <MapView />
         </div>
         {/* タイムライン */}
         <TimelineControls />

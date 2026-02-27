@@ -67,13 +67,25 @@ export default function MapView() {
   useEffect(() => {
     if (!mapContainer.current || mapRef.current) return
 
+    // コンテナのサイズを確保
+    const container = mapContainer.current
+    if (container.clientWidth === 0 || container.clientHeight === 0) {
+      console.warn('MapContainer has no size yet')
+      return
+    }
+
+    // コンテナに明示的にサイズを設定
+    container.style.width = '100%'
+    container.style.height = '100%'
+
     const map = new maplibregl.Map({
-      container: mapContainer.current,
+      container: container,
       style: TILE_PROVIDERS[tileProvider]?.style || TILE_PROVIDERS.osm.style,
       center: [mapCenterLon, mapCenterLat],
       zoom: mapZoom,
       interactive: true,
       preserveDrawingBuffer: true,  // エクスポート用キャプチャに必要
+      pixelRatio: window.devicePixelRatio,  // Device Pixel Ratio を明示的に設定
     })
 
     map.addControl(new maplibregl.NavigationControl(), 'top-right')
@@ -100,6 +112,12 @@ export default function MapView() {
 
     mapRef.current = map
     setMapInstance(map)
+
+    // style.load 後に resize
+    const onStyleLoad = () => {
+      map.resize()
+    }
+    map.on('style.load', onStyleLoad)
 
     // コンテナサイズが確定・変化したとき MapLibre に通知（16:9 ボックス対応）
     const ro = new ResizeObserver(() => { map.resize() })
@@ -163,10 +181,32 @@ export default function MapView() {
       .flatMap((track) => {
         const pts = getTrailPoints(track.points, currentTime, trailMode, trailWindowMinutes)
         if (pts.length < 2) return []
-        return [{
-          path: pts.map((p) => [p.lon, p.lat]),
-          color: hexToRgba(track.color, 217),  // 0.85 opacity
-        }]
+
+        // 経度ラップで線を分割（±180° を超える場合）
+        const segments = []
+        let currentSegment = [pts[0]]
+
+        for (let i = 1; i < pts.length; i++) {
+          const prevLon = pts[i - 1].lon
+          const currLon = pts[i].lon
+          const lonDiff = Math.abs(currLon - prevLon)
+
+          // 経度差が180°を超える場合は線を分割
+          if (lonDiff > 180) {
+            segments.push(currentSegment)
+            currentSegment = [pts[i]]
+          } else {
+            currentSegment.push(pts[i])
+          }
+        }
+        segments.push(currentSegment)
+
+        return segments
+          .filter((seg) => seg.length >= 2)
+          .map((seg) => ({
+            path: seg.map((p) => [p.lon, p.lat]),
+            color: hexToRgba(track.color, 217),  // 0.85 opacity
+          }))
       })
 
     // ── IconLayer: アイコン ──

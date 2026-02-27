@@ -23,9 +23,9 @@ export default function RootLayout({ children }) {
             `,
           }}
         />
+        <Script src="https://auth.dataviz.jp/lib/supabase.js" strategy="beforeInteractive" />
+        <Script src="https://auth.dataviz.jp/lib/dataviz-auth-client.js" strategy="afterInteractive" />
       </head>
-      <Script src="https://auth.dataviz.jp/lib/supabase.js" strategy="beforeInteractive" />
-      <Script src="https://auth.dataviz.jp/lib/dataviz-auth-client.js" strategy="afterInteractive" />
       <body className="bg-gray-950 text-white antialiased">{children}</body>
     </html>
   )

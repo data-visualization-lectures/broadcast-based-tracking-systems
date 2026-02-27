@@ -30,10 +30,15 @@ function interpolateTrack(points, t) {
   const p1 = points[hi]
   const ratio = (t - p0.t) / (p1.t - p0.t)
 
+  // 経度の差分を計算（±180° ラップ対応）
+  let lonDiff = p1.lon - p0.lon
+  if (lonDiff > 180) lonDiff -= 360
+  if (lonDiff < -180) lonDiff += 360
+
   return {
     t,
     lat: p0.lat + (p1.lat - p0.lat) * ratio,
-    lon: p0.lon + (p1.lon - p0.lon) * ratio,
+    lon: p0.lon + lonDiff * ratio,
     altitude: p0.altitude + (p1.altitude - p0.altitude) * ratio,
     speed: p0.speed,
     direction: interpolateAngle(p0.direction, p1.direction, ratio),
