@@ -3,11 +3,17 @@ import { useCallback, useState } from 'react'
 import useStore from '@/app/store/useStore'
 import { parseCsv } from '@/app/utils/csvParser'
 
+const SAMPLE_FILES = [
+  { id: 'g7_return', name: 'G7_Hiroshima_Zelensky_帰り', label: 'G7 広島 ゼレンスキー（帰り）' },
+  { id: 'g7_going', name: 'G7_Hiroshima_Zelensky_行き', label: 'G7 広島 ゼレンスキー（行き）' },
+]
+
 export default function DataUpload() {
   const addTrack = useStore((s) => s.addTrack)
   const [dragging, setDragging] = useState(false)
   const [error, setError] = useState(null)
   const [loading, setLoading] = useState(false)
+  const [selectedSample, setSelectedSample] = useState('')
 
   const processFiles = useCallback(
     async (files) => {
@@ -50,9 +56,56 @@ export default function DataUpload() {
     e.target.value = ''
   }
 
+  const loadSampleFile = async (sampleFile) => {
+    try {
+      setError(null)
+      setLoading(true)
+      const response = await fetch(`/samples/${sampleFile.name}.csv`)
+      if (!response.ok) throw new Error('ファイルの読み込みに失敗しました')
+      const text = await response.text()
+      const tracks = parseCsv(text, `${sampleFile.name}.csv`)
+      tracks.forEach((t) => addTrack(t))
+      setSelectedSample('')
+    } catch (e) {
+      setError(e.message)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const onSampleChange = (e) => {
+    const selectedId = e.target.value
+    if (!selectedId) return
+
+    const sampleFile = SAMPLE_FILES.find(f => f.id === selectedId)
+    if (sampleFile) {
+      loadSampleFile(sampleFile)
+    }
+  }
+
   return (
     <div className="space-y-2">
       <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider">データ読み込み</h3>
+
+      {/* サンプルデータドロップダウン */}
+      <div>
+        <label className="text-xs text-gray-500 block mb-1">サンプルデータ</label>
+        <select
+          value={selectedSample}
+          onChange={onSampleChange}
+          disabled={loading}
+          className="w-full bg-gray-800 border border-gray-600 rounded px-2 py-1 text-xs text-gray-300 disabled:opacity-50 disabled:cursor-not-allowed hover:border-gray-500"
+        >
+          <option value="">— サンプルを選択 —</option>
+          {SAMPLE_FILES.map((file) => (
+            <option key={file.id} value={file.id}>
+              {file.label}
+            </option>
+          ))}
+        </select>
+      </div>
+
+      {/* ファイルアップロード */}
       <div
         onDragOver={(e) => { e.preventDefault(); setDragging(true) }}
         onDragLeave={() => setDragging(false)}
@@ -76,6 +129,7 @@ export default function DataUpload() {
           multiple
           className="hidden"
           onChange={onFileChange}
+          disabled={loading}
         />
       </div>
       {error && (
