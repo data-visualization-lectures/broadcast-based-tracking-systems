@@ -19,7 +19,7 @@ const MapView = dynamic(() => import('@/app/components/MapView/MapView'), {
 
 export default function Page() {
   return (
-    <div className="flex h-screen overflow-hidden">
+    <div className="flex overflow-hidden" style={{ height: 'calc(100vh - 48px)', marginTop: '48px' }}>
       {/* サイドバー */}
       <aside className="w-72 shrink-0 bg-gray-900 border-r border-gray-700 flex flex-col overflow-hidden">
         <div className="px-4 py-3 border-b border-gray-700">

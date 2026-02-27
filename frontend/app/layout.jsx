@@ -1,5 +1,6 @@
 import './globals.css'
 import 'maplibre-gl/dist/maplibre-gl.css'
+import Script from 'next/script'
 
 export const metadata = {
   title: 'Broadcast Tracking System',
@@ -23,6 +24,8 @@ export default function RootLayout({ children }) {
           }}
         />
       </head>
+      <Script src="https://auth.dataviz.jp/lib/supabase.js" strategy="beforeInteractive" />
+      <Script src="https://auth.dataviz.jp/lib/dataviz-auth-client.js" strategy="afterInteractive" />
       <body className="bg-gray-950 text-white antialiased">{children}</body>
     </html>
   )
