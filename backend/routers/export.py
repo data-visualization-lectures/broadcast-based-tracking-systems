@@ -1,5 +1,6 @@
 import base64
 import io
+import subprocess
 import zipfile
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
@@ -21,6 +22,11 @@ class GifRequest(BaseModel):
 class ZipRequest(BaseModel):
     frames: List[str]   # base64 PNG strings
     filename_prefix: str = "frame"
+
+
+class VideoRequest(BaseModel):
+    frames: List[str]   # base64 PNG strings
+    fps: int = 10
 
 
 def decode_frame(b64_str: str) -> Image.Image:
@@ -77,5 +83,51 @@ async def export_zip(req: ZipRequest):
             media_type="application/zip",
             headers={"Content-Disposition": 'attachment; filename="frames.zip"'},
         )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/mp4")
+async def export_mp4(req: VideoRequest):
+    if len(req.frames) == 0:
+        raise HTTPException(status_code=400, detail="frames is empty")
+    if len(req.frames) > 600:
+        raise HTTPException(status_code=400, detail="too many frames (max 600)")
+
+    fps = max(1, min(req.fps, 60))
+
+    cmd = [
+        "ffmpeg", "-y",
+        "-f", "image2pipe", "-vcodec", "png", "-r", str(fps), "-i", "pipe:0",
+        "-vcodec", "libx264", "-pix_fmt", "yuv420p",
+        "-movflags", "frag_keyframe+empty_moov",
+        "-f", "mp4", "pipe:1",
+    ]
+
+    try:
+        proc = subprocess.Popen(
+            cmd,
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+        for b64 in req.frames:
+            proc.stdin.write(base64.b64decode(b64))
+        proc.stdin.close()
+
+        mp4_data = proc.stdout.read()
+        proc.wait()
+
+        if proc.returncode != 0:
+            err = proc.stderr.read().decode("utf-8", errors="replace")
+            raise HTTPException(status_code=500, detail=f"FFmpeg error: {err}")
+
+        return StreamingResponse(
+            io.BytesIO(mp4_data),
+            media_type="video/mp4",
+            headers={"Content-Disposition": 'attachment; filename="track_animation.mp4"'},
+        )
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

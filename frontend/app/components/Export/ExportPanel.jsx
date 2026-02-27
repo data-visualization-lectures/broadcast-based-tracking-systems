@@ -69,6 +69,8 @@ export default function ExportPanel() {
         await exportZip({ timeRange, tracks, exportFps, exportWidth, playbackSpeed, exportDrawDatetime, exportDatetimeMode, datetimeTextColor, setProgress, setPhase, cancelRef, BACKEND_URL, mapInstance })
       } else if (exportMethod === 'server-gif') {
         await exportServerGif({ timeRange, tracks, exportFps, exportWidth, playbackSpeed, exportDrawDatetime, exportDatetimeMode, datetimeTextColor, setProgress, setPhase, cancelRef, BACKEND_URL, mapInstance })
+      } else if (exportMethod === 'mp4') {
+        await exportServerMp4({ timeRange, tracks, exportFps, exportWidth, playbackSpeed, exportDrawDatetime, exportDatetimeMode, datetimeTextColor, setProgress, setPhase, cancelRef, BACKEND_URL, mapInstance })
       }
     } catch (e) {
       setError(e.message || 'エクスポートに失敗しました')
@@ -114,6 +116,7 @@ export default function ExportPanel() {
           <option value="client-gif">クライアントGIF（推奨）</option>
           <option value="server-gif">サーバGIF</option>
           <option value="zip">連番PNG ZIP</option>
+          <option value="mp4">MP4動画（サーバ処理）</option>
         </select>
       </div>
 
@@ -578,6 +581,50 @@ async function exportServerGif({ timeRange, tracks, exportFps, exportWidth, play
   const a = document.createElement('a')
   a.href = url
   a.download = 'track_animation.gif'
+  a.click()
+  URL.revokeObjectURL(url)
+  setProgress(null)
+  setPhase('')
+}
+
+async function exportServerMp4({ timeRange, tracks, exportFps, exportWidth, playbackSpeed, exportDrawDatetime, exportDatetimeMode, datetimeTextColor, setProgress, setPhase, cancelRef, BACKEND_URL, mapInstance }) {
+  const totalDuration = timeRange.end - timeRange.start
+  const simMsPerFrame = (playbackSpeed * 1000) / exportFps
+  const frameCount = Math.min(Math.ceil(totalDuration / simMsPerFrame), MAX_EXPORT_FRAMES) || 1
+  const frames = []
+
+  const [{ bgCanvas, toXY }, iconCache] = await Promise.all([
+    captureMapBackground(mapInstance, exportWidth),
+    buildIconCache(tracks, exportWidth),
+  ])
+
+  setPhase('フレーム生成中...')
+  for (let i = 0; i <= frameCount; i++) {
+    if (cancelRef.current) return
+    const t = timeRange.start + (totalDuration * i) / frameCount
+    const canvas = renderFrame(tracks, t, exportWidth, bgCanvas, toXY, iconCache, {
+      drawDatetime: exportDrawDatetime,
+      datetimeMode: exportDatetimeMode,
+      datetimeTextColor,
+    })
+    frames.push(canvas.toDataURL('image/png').split(',')[1])
+    setProgress(Math.round(((i + 1) / (frameCount + 1)) * 70))
+    await Promise.resolve()
+  }
+
+  setPhase('サーバ処理中...')
+  setProgress(80)
+  const res = await fetch(`${BACKEND_URL}/api/export/mp4`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ frames, fps: exportFps }),
+  })
+  if (!res.ok) throw new Error('サーバエラー')
+  const blob = await res.blob()
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = 'track_animation.mp4'
   a.click()
   URL.revokeObjectURL(url)
   setProgress(null)
