@@ -1,5 +1,5 @@
 'use client'
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import maplibregl from 'maplibre-gl'
 import { MapboxOverlay } from '@deck.gl/mapbox'
 import { PathLayer, IconLayer } from '@deck.gl/layers'
@@ -14,6 +14,8 @@ export default function MapView() {
   const mapRef          = useRef(null)
   const overlayRef      = useRef(null)   // Deck.gl MapboxOverlay
   const iconDefCacheRef = useRef(new Map()) // IconLayer auto-pack 用の安定キーキャッシュ
+  const pngCacheRef     = useRef(new Map()) // SVG→PNG ラスタライズ済みキャッシュ
+  const [pngCacheVersion, setPngCacheVersion] = useState(0) // PNG準備完了でDeck.gl再描画を起こす
   const progMoveRef     = useRef(false)  // true の間は jumpTo によるストア更新をスキップ
   const userMovingRef   = useRef(false)  // ユーザーがドラッグ操作中は true
   const isTileFirstRun  = useRef(true)
@@ -30,6 +32,36 @@ export default function MapView() {
   const setMapCenter       = useStore((s) => s.setMapCenter)
   const setMapZoom         = useStore((s) => s.setMapZoom)
   const setMapInstance     = useStore((s) => s.setMapInstance)
+
+  // ── SVG→PNG 事前ラスタライズ（Deck.gl は SVG data URL を読めないため）──
+  useEffect(() => {
+    const needed = tracks.filter((t) => {
+      const key = `${t.iconType || 'airplane'}_${t.color}`
+      return !pngCacheRef.current.has(key)
+    })
+    if (needed.length === 0) return
+
+    Promise.all(
+      needed.map((track) => new Promise((resolve) => {
+        const type = track.iconType || 'airplane'
+        const key = `${type}_${track.color}`
+        const svgUrl = svgToDataUrl(ICON_SVGS[type] || ICON_SVGS.airplane, track.color)
+        const img = new Image(64, 64)
+        img.onload = () => {
+          const c = document.createElement('canvas')
+          c.width = 64; c.height = 64
+          c.getContext('2d').drawImage(img, 0, 0, 64, 64)
+          pngCacheRef.current.set(key, c.toDataURL('image/png'))
+          resolve()
+        }
+        img.onerror = () => resolve()
+        img.src = svgUrl
+      }))
+    ).then(() => {
+      iconDefCacheRef.current.clear() // Deck.gl キャッシュをクリアして PNG を使わせる
+      setPngCacheVersion((v) => v + 1)
+    })
+  }, [tracks])
 
   // ── MapLibre 初期化（マウント時1回）──────────────────────────────
   useEffect(() => {
@@ -110,12 +142,16 @@ export default function MapView() {
       const key = `${type}_${track.color}`
       if (iconDefCacheRef.current.has(key)) return iconDefCacheRef.current.get(key)
 
+      const pngUrl = pngCacheRef.current.get(key)
+      if (!pngUrl) return null // PNG がまだ準備できていない
+
       const iconDef = {
         id: key,
-        url: svgToDataUrl(ICON_SVGS[type] || ICON_SVGS.airplane, track.color),
-        width: 128,
-        height: 128,
-        anchorY: 64, // 中心基準
+        url: pngUrl, // SVG ではなく PNG を使用（Deck.gl は SVG data URL を読めない）
+        width: 64,
+        height: 64,
+        anchorX: 32,
+        anchorY: 32,
       }
       iconDefCacheRef.current.set(key, iconDef)
       return iconDef
@@ -137,12 +173,17 @@ export default function MapView() {
     const positions = getInterpolatedPositions(tracks, currentTime)
     const iconData = positions
       .filter(({ track }) => track.visible)
-      .map(({ track, point }) => ({
-        coordinates: [point.lon, point.lat],
-        direction: point.direction || 0,
-        icon: getCachedIconDef(track),
-        size: iconSize,
-      }))
+      .map(({ track, point }) => {
+        const icon = getCachedIconDef(track)
+        if (!icon) return null // PNG 未準備のアイコンはスキップ
+        return {
+          coordinates: [point.lon, point.lat],
+          direction: point.direction || 0,
+          icon,
+          size: iconSize,
+        }
+      })
+      .filter(Boolean)
 
     overlayRef.current.setProps({
       layers: [
@@ -167,7 +208,7 @@ export default function MapView() {
         }),
       ],
     })
-  }, [tracks, currentTime, trailMode, trailWindowMinutes, iconSize])
+  }, [tracks, currentTime, trailMode, trailWindowMinutes, iconSize, pngCacheVersion])
 
   return (
     <div
