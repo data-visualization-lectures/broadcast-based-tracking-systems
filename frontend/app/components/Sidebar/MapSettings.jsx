@@ -1,6 +1,7 @@
 'use client'
 import useStore from '@/app/store/useStore'
 import { TILE_PROVIDERS } from '@/app/utils/tileProviders'
+import { useI18n } from '@/app/i18n'
 
 export default function MapSettings() {
   const tileProvider = useStore((s) => s.tileProvider)
@@ -16,12 +17,13 @@ export default function MapSettings() {
   const setTrailWindowMinutes = useStore((s) => s.setTrailWindowMinutes)
   const setIconSize = useStore((s) => s.setIconSize)
   const fitAll = useStore((s) => s.fitAll)
+  const { t } = useI18n()
 
   return (
     <div className="space-y-3">
       {/* タイル選択 */}
       <div>
-        <label className="text-xs text-gray-400 block mb-1">ベースマップ</label>
+        <label className="text-xs text-gray-400 block mb-1">{t('map.basemap')}</label>
         <select
           value={tileProvider}
           onChange={(e) => setTileProvider(e.target.value)}
@@ -29,17 +31,17 @@ export default function MapSettings() {
         >
           {Object.entries(TILE_PROVIDERS).map(([key, val]) => (
             <option key={key} value={key}>
-              {val.label}
+              {val.labelKey ? t(val.labelKey) : val.label}
             </option>
           ))}
         </select>
       </div>
 
-      {/* ズームレベル（MapLibre zoom: 0=世界全体, 22=建物レベル） */}
+      {/* ズームレベル */}
       <div>
         <label className="text-xs text-gray-400 block mb-1">
-          ズームレベル: <span className="text-white font-mono">{mapZoom.toFixed(1)}</span>
-          <span className="text-gray-600 ml-1 text-xs">（0: 世界 ↔ 22: 建物）</span>
+          {t('map.zoom')}: <span className="text-white font-mono">{mapZoom.toFixed(1)}</span>
+          <span className="text-gray-600 ml-1 text-xs">{t('map.zoomRange')}</span>
         </label>
         <input
           type="range"
@@ -55,7 +57,7 @@ export default function MapSettings() {
       {/* 緯度経度 */}
       <div className="grid grid-cols-2 gap-1">
         <div>
-          <label className="text-xs text-gray-400 block mb-0.5">緯度</label>
+          <label className="text-xs text-gray-400 block mb-0.5">{t('map.lat')}</label>
           <input
             type="number"
             value={mapCenter.lat.toFixed(4)}
@@ -67,7 +69,7 @@ export default function MapSettings() {
           />
         </div>
         <div>
-          <label className="text-xs text-gray-400 block mb-0.5">経度</label>
+          <label className="text-xs text-gray-400 block mb-0.5">{t('map.lon')}</label>
           <input
             type="number"
             value={mapCenter.lon.toFixed(4)}
@@ -85,25 +87,25 @@ export default function MapSettings() {
         onClick={fitAll}
         className="w-full py-1 rounded bg-gray-700 hover:bg-gray-600 text-xs text-white"
       >
-        全データにフィット
+        {t('map.fitAll')}
       </button>
 
       {/* 軌跡モード */}
       <div>
-        <label className="text-xs text-gray-400 block mb-1">軌跡表示</label>
+        <label className="text-xs text-gray-400 block mb-1">{t('map.trail')}</label>
         <select
           value={trailMode}
           onChange={(e) => setTrailMode(e.target.value)}
           className="w-full bg-gray-700 text-xs text-white rounded px-2 py-1 border border-gray-600"
         >
-          <option value="full">全軌跡を表示</option>
-          <option value="window">直近 N 分のみ</option>
-          <option value="none">非表示</option>
+          <option value="full">{t('map.trailFull')}</option>
+          <option value="window">{t('map.trailWindow')}</option>
+          <option value="none">{t('map.trailNone')}</option>
         </select>
         {trailMode === 'window' && (
           <div className="mt-1">
             <label className="text-xs text-gray-400 block mb-0.5">
-              表示時間: {trailWindowMinutes} 分
+              {t('map.trailDuration')}: {trailWindowMinutes} {t('map.trailMinutes')}
             </label>
             <input
               type="range"
@@ -120,7 +122,7 @@ export default function MapSettings() {
       {/* アイコンサイズ */}
       <div>
         <label className="text-xs text-gray-400 block mb-1">
-          アイコンサイズ: {iconSize}px
+          {t('map.iconSize')}: {iconSize}px
         </label>
         <input
           type="range"

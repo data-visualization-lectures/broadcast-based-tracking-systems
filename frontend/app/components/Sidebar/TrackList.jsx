@@ -1,16 +1,18 @@
 'use client'
 import useStore from '@/app/store/useStore'
 import { ICON_OPTIONS_AIRCRAFT, ICON_OPTIONS_VESSEL } from '@/app/utils/iconConfig'
+import { useI18n } from '@/app/i18n'
 
 export default function TrackList() {
   const tracks = useStore((s) => s.tracks)
   const updateTrack = useStore((s) => s.updateTrack)
   const removeTrack = useStore((s) => s.removeTrack)
+  const { t } = useI18n()
 
   if (tracks.length === 0) {
     return (
       <div className="text-xs text-gray-500 text-center py-4">
-        データが読み込まれていません
+        {t('track.noData')}
       </div>
     )
   }
@@ -18,7 +20,7 @@ export default function TrackList() {
   return (
     <div className="space-y-2">
       <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider">
-        トラック一覧 ({tracks.length})
+        {t('track.heading')} ({tracks.length})
       </h3>
       <div className="space-y-1 max-h-64 overflow-y-auto pr-1">
         {tracks.map((track) => {
@@ -66,7 +68,7 @@ export default function TrackList() {
               </div>
               {/* アイコン選択 */}
               <div className="flex items-center gap-2">
-                <span className="text-xs text-gray-500 shrink-0">アイコン:</span>
+                <span className="text-xs text-gray-500 shrink-0">{t('track.icon')}</span>
                 <select
                   value={track.iconType}
                   onChange={(e) =>
@@ -76,14 +78,14 @@ export default function TrackList() {
                 >
                   {iconOptions.map((opt) => (
                     <option key={opt.value} value={opt.value}>
-                      {opt.label}
+                      {t(opt.labelKey)}
                     </option>
                   ))}
                 </select>
               </div>
               {/* ポイント数 */}
               <div className="text-xs text-gray-600">
-                {track.points.length.toLocaleString()} ポイント
+                {track.points.length.toLocaleString()} {t('track.points')}
               </div>
             </div>
           )

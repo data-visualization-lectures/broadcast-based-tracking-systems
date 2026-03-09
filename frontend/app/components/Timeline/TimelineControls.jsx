@@ -1,6 +1,7 @@
 'use client'
 import { useEffect, useRef } from 'react'
 import useStore from '@/app/store/useStore'
+import { useI18n } from '@/app/i18n'
 
 const SPEED_OPTIONS = [
   { label: '×1', value: 1 },
@@ -23,6 +24,7 @@ export default function TimelineControls() {
   const setCurrentTime = useStore((s) => s.setCurrentTime)
   const setIsPlaying = useStore((s) => s.setIsPlaying)
   const setPlaybackSpeed = useStore((s) => s.setPlaybackSpeed)
+  const { t } = useI18n()
 
   const rafRef = useRef(null)
   const lastTimeRef = useRef(null)
@@ -36,8 +38,8 @@ export default function TimelineControls() {
 
     const tick = (now) => {
       if (lastTimeRef.current !== null) {
-        const elapsed = now - lastTimeRef.current // ms (real time)
-        const simElapsed = elapsed * playbackSpeed   // ms (sim time)
+        const elapsed = now - lastTimeRef.current
+        const simElapsed = elapsed * playbackSpeed
         setCurrentTime((prev) => {
           const next = prev + simElapsed
           if (next >= timeRange.end) {
@@ -118,7 +120,7 @@ export default function TimelineControls() {
 
         {/* 速度 */}
         <div className="flex items-center gap-1">
-          <span className="text-xs text-gray-400">速度:</span>
+          <span className="text-xs text-gray-400">{t('timeline.speed')}</span>
           {SPEED_OPTIONS.map((opt) => (
             <button
               key={opt.value}

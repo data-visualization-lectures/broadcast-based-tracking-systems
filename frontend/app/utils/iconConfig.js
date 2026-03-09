@@ -2,16 +2,16 @@
 // Deck.gl IconLayer の getIcon で使用
 
 export const ICON_OPTIONS_AIRCRAFT = [
-  { value: 'airplane', label: '旅客機' },
-  { value: 'small_plane', label: '小型機' },
-  { value: 'helicopter', label: 'ヘリコプター' },
-  { value: 'triangle', label: 'シンプル三角' },
+  { value: 'airplane', labelKey: 'icon.airplane' },
+  { value: 'small_plane', labelKey: 'icon.smallPlane' },
+  { value: 'helicopter', labelKey: 'icon.helicopter' },
+  { value: 'triangle', labelKey: 'icon.triangle' },
 ]
 
 export const ICON_OPTIONS_VESSEL = [
-  { value: 'ship', label: '大型船' },
-  { value: 'small_boat', label: '小型船' },
-  { value: 'triangle', label: 'シンプル三角' },
+  { value: 'ship', labelKey: 'icon.ship' },
+  { value: 'small_boat', labelKey: 'icon.smallBoat' },
+  { value: 'triangle', labelKey: 'icon.triangle' },
 ]
 
 // SVG文字列を返す（色・サイズは Deck.gl 側で制御）

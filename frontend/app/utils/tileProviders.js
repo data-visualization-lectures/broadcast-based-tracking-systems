@@ -48,7 +48,8 @@ export const TILE_PROVIDERS = {
     },
   },
   esri_satellite: {
-    label: 'ESRI 衛星',
+    label: 'ESRI Satellite',
+    labelKey: 'tile.esriSatellite',
     exportDatetimeTextColor: '#ffffff',
     style: {
       version: 8,
@@ -66,7 +67,8 @@ export const TILE_PROVIDERS = {
     },
   },
   gsi_std: {
-    label: '地理院タイル（標準地図）',
+    label: 'GSI Tiles',
+    labelKey: 'tile.gsiStd',
     exportDatetimeTextColor: '#000000',
     style: {
       version: 8,

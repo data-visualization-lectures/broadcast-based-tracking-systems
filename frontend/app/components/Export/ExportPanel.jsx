@@ -4,14 +4,15 @@ import useStore from '@/app/store/useStore'
 import { getInterpolatedPositions } from '@/app/utils/geoUtils'
 import { ICON_SVGS } from '@/app/utils/iconConfig'
 import { TILE_PROVIDERS } from '@/app/utils/tileProviders'
+import { useI18n } from '@/app/i18n'
 
 const FPS_OPTIONS = [1, 2, 5, 10]
 const WIDTH_OPTIONS = [480, 720, 1080]
-const DATETIME_MODE_OPTIONS = [
-  { value: 'utc', label: 'データそのまま (UTC)' },
-  { value: 'jst', label: '日本時間 (JST)' },
+const DATETIME_MODE_KEYS = [
+  { value: 'utc', labelKey: 'export.datetimeUtc' },
+  { value: 'jst', labelKey: 'export.datetimeJst' },
 ]
-const MAX_EXPORT_FRAMES = 600  // フレーム上限（これ以上は等間隔で間引き）
+const MAX_EXPORT_FRAMES = 600
 const rawBackendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8000'
 const BACKEND_URL = /^https?:\/\//.test(rawBackendUrl) ? rawBackendUrl : `https://${rawBackendUrl}`
 
@@ -33,18 +34,17 @@ export default function ExportPanel() {
   const mapInstance = useStore((s) => s.mapInstance)
   const playbackSpeed = useStore((s) => s.playbackSpeed)
   const datetimeTextColor = TILE_PROVIDERS[tileProvider]?.exportDatetimeTextColor || '#ffffff'
+  const { t } = useI18n()
 
   const hasData = tracks.length > 0 && timeRange.end > timeRange.start
 
-  // 再生速度と FPS から動画の推定フレーム数・尺を計算
-  // 1フレーム = playbackSpeed × 1000ms ÷ exportFps のシミュレーション時間
   const totalDurationMs = timeRange.end - timeRange.start
   const simMsPerFrame = (playbackSpeed * 1000) / exportFps
   const idealFrames = hasData ? Math.ceil(totalDurationMs / simMsPerFrame) : 0
   const exportFrameCount = Math.min(idealFrames, MAX_EXPORT_FRAMES)
   const exportVideoDurationSec = hasData ? Math.round(exportFrameCount / exportFps) : 0
 
-  const [progress, setProgress] = useState(null) // 0-100 or null
+  const [progress, setProgress] = useState(null)
   const [phase, setPhase] = useState('')
   const [error, setError] = useState(null)
   const [previewUrl, setPreviewUrl] = useState(null)
@@ -53,13 +53,11 @@ export default function ExportPanel() {
 
   const handleExport = useCallback(async () => {
     if (!hasData) return
-    // 即座に UI を更新してボタンを無効化・進捗表示を開始
     setError(null)
     setProgress(0)
-    setPhase('準備中...')
+    setPhase('preparing')
     cancelRef.current = false
 
-    // React の再レンダーをブラウザに反映させてからヘビーな処理を開始
     await new Promise(r => setTimeout(r, 50))
 
     try {
@@ -73,11 +71,11 @@ export default function ExportPanel() {
         await exportServerMp4({ timeRange, tracks, exportFps, exportWidth, playbackSpeed, exportDrawDatetime, exportDatetimeMode, datetimeTextColor, setProgress, setPhase, cancelRef, BACKEND_URL, mapInstance })
       }
     } catch (e) {
-      setError(e.message || 'エクスポートに失敗しました')
+      setError(e.message || t('export.failed'))
       setProgress(null)
       setPhase('')
     }
-  }, [exportMethod, exportFps, exportWidth, playbackSpeed, exportDrawDatetime, exportDatetimeMode, datetimeTextColor, timeRange, tracks, hasData, mapInstance])
+  }, [exportMethod, exportFps, exportWidth, playbackSpeed, exportDrawDatetime, exportDatetimeMode, datetimeTextColor, timeRange, tracks, hasData, mapInstance, t])
 
   const handlePreview = useCallback(async () => {
     if (!hasData) return
@@ -107,22 +105,22 @@ export default function ExportPanel() {
     <div className="space-y-3">
       {/* 方式 */}
       <div>
-        <label className="text-xs text-gray-400 block mb-1">方式</label>
+        <label className="text-xs text-gray-400 block mb-1">{t('export.method')}</label>
         <select
           value={exportMethod}
           onChange={(e) => setExportMethod(e.target.value)}
           className="w-full bg-gray-700 text-xs text-white rounded px-2 py-1 border border-gray-600"
         >
-          <option value="client-gif">クライアントGIF（推奨）</option>
-          <option value="server-gif">サーバGIF</option>
-          <option value="zip">連番PNG ZIP</option>
-          <option value="mp4">MP4動画（サーバ処理）</option>
+          <option value="client-gif">{t('export.clientGif')}</option>
+          <option value="server-gif">{t('export.serverGif')}</option>
+          <option value="zip">{t('export.zip')}</option>
+          <option value="mp4">{t('export.mp4')}</option>
         </select>
       </div>
 
       {/* FPS */}
       <div>
-        <label className="text-xs text-gray-400 block mb-1">FPS</label>
+        <label className="text-xs text-gray-400 block mb-1">{t('export.fps')}</label>
         <div className="flex gap-1">
           {FPS_OPTIONS.map((f) => (
             <button
@@ -142,7 +140,7 @@ export default function ExportPanel() {
 
       {/* 解像度 */}
       <div>
-        <label className="text-xs text-gray-400 block mb-1">解像度</label>
+        <label className="text-xs text-gray-400 block mb-1">{t('export.resolution')}</label>
         <div className="flex gap-1">
           {WIDTH_OPTIONS.map((w) => (
             <button
@@ -163,8 +161,8 @@ export default function ExportPanel() {
       {/* 日時描画 */}
       <div className="bg-gray-800 rounded px-2 py-1.5 flex items-center justify-between">
         <div>
-          <label className="text-xs text-gray-300">日時を描画</label>
-          <p className="text-[10px] text-gray-500 mt-0.5">中央下部 / 文字色: ベースマップ連動</p>
+          <label className="text-xs text-gray-300">{t('export.drawDatetime')}</label>
+          <p className="text-[10px] text-gray-500 mt-0.5">{t('export.drawDatetimeDesc')}</p>
         </div>
         <input
           type="checkbox"
@@ -176,15 +174,15 @@ export default function ExportPanel() {
 
       {exportDrawDatetime && (
         <div>
-          <label className="text-xs text-gray-400 block mb-1">日時形式</label>
+          <label className="text-xs text-gray-400 block mb-1">{t('export.datetimeFormat')}</label>
           <select
             value={exportDatetimeMode}
             onChange={(e) => setExportDatetimeMode(e.target.value)}
             className="w-full bg-gray-700 text-xs text-white rounded px-2 py-1 border border-gray-600"
           >
-            {DATETIME_MODE_OPTIONS.map((opt) => (
+            {DATETIME_MODE_KEYS.map((opt) => (
               <option key={opt.value} value={opt.value}>
-                {opt.label}
+                {t(opt.labelKey)}
               </option>
             ))}
           </select>
@@ -194,11 +192,11 @@ export default function ExportPanel() {
       {/* 出力プレビュー */}
       {hasData && (
         <div className="text-xs text-gray-500 bg-gray-800 rounded px-2 py-1.5 space-y-0.5">
-          <div>再生速度 ×{playbackSpeed} / {exportFps}fps</div>
+          <div>×{playbackSpeed} / {exportFps}fps</div>
           <div>
-            → {exportFrameCount}フレーム・約{exportVideoDurationSec}秒の動画
+            → {exportFrameCount} {t('export.frames')} / {t('export.approxVideo', { sec: exportVideoDurationSec })}
             {idealFrames > MAX_EXPORT_FRAMES && (
-              <span className="text-yellow-500"> ※上限{MAX_EXPORT_FRAMES}fで間引き</span>
+              <span className="text-yellow-500"> {t('export.decimateNote', { max: MAX_EXPORT_FRAMES })}</span>
             )}
           </div>
         </div>
@@ -210,7 +208,7 @@ export default function ExportPanel() {
         disabled={!hasData || isPreviewing || progress !== null}
         className="w-full py-1.5 rounded bg-gray-700 hover:bg-gray-600 text-xs text-gray-200 disabled:opacity-40"
       >
-        {isPreviewing ? 'プレビュー生成中...' : '現在フレームをプレビュー'}
+        {isPreviewing ? t('export.previewing') : t('export.previewFrame')}
       </button>
 
       {previewUrl && (
@@ -235,7 +233,7 @@ export default function ExportPanel() {
         disabled={!hasData || progress !== null}
         className="w-full py-2 rounded bg-cyan-600 hover:bg-cyan-500 text-white text-sm font-semibold disabled:opacity-40"
       >
-        {progress !== null ? `${phase} ${progress}%` : 'エクスポート開始'}
+        {progress !== null ? `${t(`export.phase.${phase}`)} ${progress}%` : t('export.start')}
       </button>
 
       {progress !== null && (
@@ -243,7 +241,7 @@ export default function ExportPanel() {
           onClick={() => { cancelRef.current = true; setProgress(null); setPhase('') }}
           className="w-full py-1 rounded bg-gray-700 hover:bg-gray-600 text-xs text-gray-300"
         >
-          キャンセル
+          {t('export.cancel')}
         </button>
       )}
 
@@ -252,7 +250,7 @@ export default function ExportPanel() {
       )}
 
       {!hasData && (
-        <p className="text-xs text-gray-600 text-center">データを読み込んでください</p>
+        <p className="text-xs text-gray-600 text-center">{t('export.noData')}</p>
       )}
     </div>
   )
@@ -260,10 +258,6 @@ export default function ExportPanel() {
 
 // ---- エクスポート実装 ----
 
-/**
- * 各トラックのアイコン SVG を Image オブジェクトに変換してキャッシュする
- * key: `${iconType}_${color}` → Image
- */
 async function buildIconCache(tracks, exportWidth) {
   const size = Math.round(exportWidth / 30)
   const cache = {}
@@ -286,15 +280,9 @@ async function buildIconCache(tracks, exportWidth) {
   return cache
 }
 
-/**
- * エクスポート開始時にマップの背景と投影関数をキャプチャする
- * bgCanvas: マップタイルを描画した静止背景 Canvas
- * toXY: (lon, lat) → {x, y} エクスポートサイズ座標系
- */
 async function captureMapBackground(mapInstance, exportWidth) {
   const exportHeight = Math.round(exportWidth * 0.5625)
 
-  // project 関数は mapInstance に依存（bgCanvas が取れなくても使う）
   const buildToXY = (map) => {
     const container = map.getContainer()
     const scaleX = exportWidth / container.clientWidth
@@ -309,18 +297,14 @@ async function captureMapBackground(mapInstance, exportWidth) {
 
   const toXY = buildToXY(mapInstance)
 
-  // triggerRepaint → render イベント完了後にキャプチャする
-  // (preserveDrawingBuffer:true でも render タイミング外では空になる場合がある)
   try {
     await new Promise((resolve) => {
       mapInstance.once('render', resolve)
       mapInstance.triggerRepaint()
-      // フォールバック: 300ms 以内に render が来なければ進む
       setTimeout(resolve, 300)
     })
 
     const mapCanvas = mapInstance.getCanvas()
-    // toDataURL 経由で確実に読み取る (drawImage 直接より安定)
     const dataUrl = mapCanvas.toDataURL('image/png')
     const img = await new Promise((resolve, reject) => {
       const image = new Image()
@@ -335,7 +319,6 @@ async function captureMapBackground(mapInstance, exportWidth) {
     const bgCtx = bgCanvas.getContext('2d')
     bgCtx.drawImage(img, 0, 0, exportWidth, exportHeight)
 
-    // 著作権表示を右下に描き込む（HTML オーバーレイはキャンバスに含まれないため）
     const attrEl = mapInstance.getContainer().querySelector('.maplibregl-ctrl-attrib-inner')
     const attrText = attrEl ? attrEl.innerText.trim() : ''
     if (attrText) {
@@ -366,7 +349,6 @@ function renderFrame(tracks, currentTime, width, bgCanvas, toXY, iconCache = {},
   canvas.height = height
   const ctx = canvas.getContext('2d', { willReadFrequently: true })
 
-  // 背景: マップタイル（キャプチャ済み）またはフォールバック色
   if (bgCanvas) {
     ctx.drawImage(bgCanvas, 0, 0, width, height)
   } else {
@@ -374,7 +356,6 @@ function renderFrame(tracks, currentTime, width, bgCanvas, toXY, iconCache = {},
     ctx.fillRect(0, 0, width, height)
   }
 
-  // 座標変換関数（mapInstance なし時は簡易 lat/lon → pixel 変換）
   let project = toXY
   if (!project) {
     const allPoints = tracks.flatMap((t) => t.points)
@@ -396,7 +377,6 @@ function renderFrame(tracks, currentTime, width, bgCanvas, toXY, iconCache = {},
     })
   }
 
-  // 軌跡を描画
   tracks.filter((t) => t.visible && t.points.length >= 2).forEach((track) => {
     const pastPoints = track.points.filter((p) => p.t <= currentTime)
     if (pastPoints.length < 2) return
@@ -411,7 +391,6 @@ function renderFrame(tracks, currentTime, width, bgCanvas, toXY, iconCache = {},
     ctx.stroke()
   })
 
-  // 現在位置アイコンを描画（iconCache に SVG Image があれば使い、なければ三角フォールバック）
   const iconSize = Math.round(width / 30)
   getInterpolatedPositions(tracks, currentTime).forEach(({ track, point }) => {
     if (!track.visible) return
@@ -424,7 +403,6 @@ function renderFrame(tracks, currentTime, width, bgCanvas, toXY, iconCache = {},
     if (iconImg) {
       ctx.drawImage(iconImg, -iconSize / 2, -iconSize / 2, iconSize, iconSize)
     } else {
-      // フォールバック: 塗りつぶし三角
       ctx.fillStyle = track.color
       ctx.beginPath()
       ctx.moveTo(0, -8)
@@ -444,7 +422,6 @@ function renderFrame(tracks, currentTime, width, bgCanvas, toXY, iconCache = {},
 async function exportClientGif({ timeRange, tracks, exportFps, exportWidth, playbackSpeed, exportDrawDatetime, exportDatetimeMode, datetimeTextColor, setProgress, setPhase, cancelRef, mapInstance }) {
   const { default: GIF } = await import('gif.js')
   const totalDuration = timeRange.end - timeRange.start
-  // 再生速度と FPS から1フレームあたりのシミュレーション時間を決定
   const simMsPerFrame = (playbackSpeed * 1000) / exportFps
   const frameCount = Math.min(Math.ceil(totalDuration / simMsPerFrame), MAX_EXPORT_FRAMES) || 1
 
@@ -461,8 +438,7 @@ async function exportClientGif({ timeRange, tracks, exportFps, exportWidth, play
     workerScript: '/gif.worker.js',
   })
 
-  // フェーズ1: フレーム生成 (0 → 70%)
-  setPhase('フレーム生成中...')
+  setPhase('generating')
   for (let i = 0; i <= frameCount; i++) {
     if (cancelRef.current) return
     const t = timeRange.start + (totalDuration * i) / frameCount
@@ -473,11 +449,10 @@ async function exportClientGif({ timeRange, tracks, exportFps, exportWidth, play
     })
     gif.addFrame(canvas, { delay: Math.round(1000 / exportFps), copy: true })
     setProgress(Math.round(((i + 1) / (frameCount + 1)) * 70))
-    await Promise.resolve() // React が進捗バーを更新できるよう毎フレーム yield
+    await Promise.resolve()
   }
 
-  // フェーズ2: GIFエンコード (70 → 100%)
-  setPhase('GIFエンコード中...')
+  setPhase('encoding')
   setProgress(70)
   await new Promise((resolve, reject) => {
     gif.on('progress', (p) => {
@@ -510,7 +485,7 @@ async function exportZip({ timeRange, tracks, exportFps, exportWidth, playbackSp
     buildIconCache(tracks, exportWidth),
   ])
 
-  setPhase('フレーム生成中...')
+  setPhase('generating')
   for (let i = 0; i <= frameCount; i++) {
     if (cancelRef.current) return
     const t = timeRange.start + (totalDuration * i) / frameCount
@@ -524,14 +499,14 @@ async function exportZip({ timeRange, tracks, exportFps, exportWidth, playbackSp
     await Promise.resolve()
   }
 
-  setPhase('サーバ処理中...')
+  setPhase('server')
   setProgress(80)
   const res = await fetch(`${BACKEND_URL}/api/export/zip`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ frames, filename_prefix: 'frame' }),
   })
-  if (!res.ok) throw new Error('サーバエラー')
+  if (!res.ok) throw new Error('Server error')
   const blob = await res.blob()
   const url = URL.createObjectURL(blob)
   const a = document.createElement('a')
@@ -554,7 +529,7 @@ async function exportServerGif({ timeRange, tracks, exportFps, exportWidth, play
     buildIconCache(tracks, exportWidth),
   ])
 
-  setPhase('フレーム生成中...')
+  setPhase('generating')
   for (let i = 0; i <= frameCount; i++) {
     if (cancelRef.current) return
     const t = timeRange.start + (totalDuration * i) / frameCount
@@ -568,14 +543,14 @@ async function exportServerGif({ timeRange, tracks, exportFps, exportWidth, play
     await Promise.resolve()
   }
 
-  setPhase('サーバ処理中...')
+  setPhase('server')
   setProgress(80)
   const res = await fetch(`${BACKEND_URL}/api/export/gif`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ frames, fps: exportFps, loop: 0 }),
   })
-  if (!res.ok) throw new Error('サーバエラー')
+  if (!res.ok) throw new Error('Server error')
   const blob = await res.blob()
   const url = URL.createObjectURL(blob)
   const a = document.createElement('a')
@@ -598,7 +573,7 @@ async function exportServerMp4({ timeRange, tracks, exportFps, exportWidth, play
     buildIconCache(tracks, exportWidth),
   ])
 
-  setPhase('フレーム生成中...')
+  setPhase('generating')
   for (let i = 0; i <= frameCount; i++) {
     if (cancelRef.current) return
     const t = timeRange.start + (totalDuration * i) / frameCount
@@ -612,14 +587,14 @@ async function exportServerMp4({ timeRange, tracks, exportFps, exportWidth, play
     await Promise.resolve()
   }
 
-  setPhase('サーバ処理中...')
+  setPhase('server')
   setProgress(80)
   const res = await fetch(`${BACKEND_URL}/api/export/mp4`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ frames, fps: exportFps }),
   })
-  if (!res.ok) throw new Error('サーバエラー')
+  if (!res.ok) throw new Error('Server error')
   const blob = await res.blob()
   const url = URL.createObjectURL(blob)
   const a = document.createElement('a')
