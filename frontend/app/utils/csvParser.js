@@ -1,5 +1,16 @@
 import Papa from 'papaparse'
 
+/** row から大文字小文字を無視してキーの値を取得する */
+function getField(row, ...names) {
+  for (const key of Object.keys(row)) {
+    const lower = key.trim().toLowerCase()
+    for (const name of names) {
+      if (lower === name.toLowerCase()) return row[key]
+    }
+  }
+  return undefined
+}
+
 /**
  * CSV テキストをパースしてトラックオブジェクトを返す
  * @param {string} text - CSV 文字列
@@ -23,18 +34,15 @@ export function parseCsv(text, filename) {
   const headers = Object.keys(rows[0]).map((h) => h.trim())
 
   // 種別判定
-  const isAdsb = headers.some((h) =>
-    ['callsign', 'Callsign'].includes(h)
-  )
-  const isAis = headers.some((h) =>
-    ['mmsi', 'MMSI', 'vessel_name', 'VesselName'].includes(h)
-  )
+  const headersLower = headers.map((h) => h.toLowerCase())
+  const isAdsb = headersLower.includes('callsign')
+  const isAis = headersLower.some((h) => ['mmsi', 'vessel_name', 'vesselname'].includes(h))
   const type = isAdsb ? 'aircraft' : isAis ? 'vessel' : 'aircraft'
 
   // Callsign でグループ化（複数機体が1ファイルに含まれる場合）
   const groupKey = type === 'aircraft'
-    ? (row) => row.Callsign || row.callsign || 'UNKNOWN'
-    : (row) => row.MMSI || row.mmsi || row.VesselName || row.vessel_name || 'UNKNOWN'
+    ? (row) => getField(row, 'callsign') || 'UNKNOWN'
+    : (row) => getField(row, 'mmsi') || getField(row, 'vesselname', 'vessel_name') || 'UNKNOWN'
 
   const groups = {}
   for (const row of rows) {
@@ -59,18 +67,50 @@ export function parseCsv(text, filename) {
   })
 }
 
+/** タイムスタンプ文字列をミリ秒に変換する */
+function parseTimestamp(raw) {
+  if (raw == null || raw === '') return null
+  const str = String(raw).trim()
+
+  // Unixタイムスタンプ（数値のみ）
+  if (/^\d+(\.\d+)?$/.test(str)) {
+    const num = Number(str)
+    // 13桁以上ならミリ秒、それ以外は秒として扱う
+    return num > 9999999999 ? num : num * 1000
+  }
+
+  // YYYYMMDD_HHMMSS 形式
+  const compact = str.match(/^(\d{4})(\d{2})(\d{2})[_T](\d{2})(\d{2})(\d{2})$/)
+  if (compact) {
+    const iso = `${compact[1]}-${compact[2]}-${compact[3]}T${compact[4]}:${compact[5]}:${compact[6]}Z`
+    return new Date(iso).getTime()
+  }
+
+  // ISO 8601 やその他の日時文字列（Date.parse で解釈可能なもの）
+  const ms = Date.parse(str)
+  return isNaN(ms) ? null : ms
+}
+
 function parseRow(row, type) {
   try {
     // timestamp
-    const rawTs = row.Timestamp || row.timestamp
-    const t = rawTs ? Number(rawTs) * 1000 : null
+    const rawTs = getField(row, 'timestamp', 'time', 'datetime', 'date_time', 'date')
+    const t = parseTimestamp(rawTs)
 
-    // position: "lat,lon" 形式
-    const pos = row.Position || row.position || ''
-    const parts = pos.replace(/^"|"$/g, '').split(',')
-    if (parts.length < 2) return null
-    const lat = parseFloat(parts[0])
-    const lon = parseFloat(parts[1])
+    // position: "lat,lon" 結合形式 or 個別カラム
+    let lat, lon
+    const pos = getField(row, 'position') || ''
+    if (pos) {
+      const parts = pos.replace(/^"|"$/g, '').split(',')
+      if (parts.length >= 2) {
+        lat = parseFloat(parts[0])
+        lon = parseFloat(parts[1])
+      }
+    }
+    if (lat == null || isNaN(lat)) {
+      lat = parseFloat(getField(row, 'lat', 'latitude'))
+      lon = parseFloat(getField(row, 'lon', 'longitude'))
+    }
 
     if (!t || isNaN(lat) || isNaN(lon)) return null
 
@@ -78,9 +118,9 @@ function parseRow(row, type) {
       t,
       lat,
       lon,
-      altitude: Number(row.Altitude || row.altitude || 0),
-      speed: Number(row.Speed || row.speed || 0),
-      direction: Number(row.Direction || row.direction || row.Course || row.course || 0),
+      altitude: Number(getField(row, 'altitude') || 0),
+      speed: Number(getField(row, 'speed') || 0),
+      direction: Number(getField(row, 'direction', 'course') || 0),
     }
   } catch {
     return null
