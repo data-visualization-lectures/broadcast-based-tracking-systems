@@ -86,24 +86,7 @@ export default function DataUpload() {
   return (
     <div className="space-y-2">
       <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider">データ読み込み</h3>
-
-      {/* サンプルデータドロップダウン */}
-      <div>
-        <label className="text-xs text-gray-500 block mb-1">サンプルデータ</label>
-        <select
-          value={selectedSample}
-          onChange={onSampleChange}
-          disabled={loading}
-          className="w-full bg-gray-800 border border-gray-600 rounded px-2 py-1 text-xs text-gray-300 disabled:opacity-50 disabled:cursor-not-allowed hover:border-gray-500"
-        >
-          <option value="">— サンプルを選択 —</option>
-          {SAMPLE_FILES.map((file) => (
-            <option key={file.id} value={file.id}>
-              {file.label}
-            </option>
-          ))}
-        </select>
-      </div>
+      <p className="text-xs text-gray-500">緯度（lat）経度（lon）を含むCSVファイルに対応しています。</p>
 
       {/* ファイルアップロード */}
       <div
@@ -131,6 +114,24 @@ export default function DataUpload() {
           onChange={onFileChange}
           disabled={loading}
         />
+      </div>
+
+      {/* サンプルデータドロップダウン */}
+      <div>
+        <label className="text-xs text-gray-500 block mb-1">サンプルデータ</label>
+        <select
+          value={selectedSample}
+          onChange={onSampleChange}
+          disabled={loading}
+          className="w-full bg-gray-800 border border-gray-600 rounded px-2 py-1 text-xs text-gray-300 disabled:opacity-50 disabled:cursor-not-allowed hover:border-gray-500"
+        >
+          <option value="">— サンプルを選択 —</option>
+          {SAMPLE_FILES.map((file) => (
+            <option key={file.id} value={file.id}>
+              {file.label}
+            </option>
+          ))}
+        </select>
       </div>
       {error && (
         <p className="text-xs text-red-400 bg-red-900/20 rounded px-2 py-1">{error}</p>
