@@ -4,8 +4,8 @@ import useStore from '@/app/store/useStore'
 import { parseCsv } from '@/app/utils/csvParser'
 
 const SAMPLE_FILES = [
-  { id: 'g7_return', name: 'G7_Hiroshima_Zelensky_帰り', label: 'G7 広島 ゼレンスキー（帰り）' },
-  { id: 'g7_going', name: 'G7_Hiroshima_Zelensky_行き', label: 'G7 広島 ゼレンスキー（行き）' },
+  { id: 'g7_going', name: 'G7_Hiroshima_Zelensky_行き', label: 'G7 広島へのゼレンスキーの航路（行き）' },
+  { id: 'g7_return', name: 'G7_Hiroshima_Zelensky_帰り', label: 'G7 広島へのゼレンスキーの航路（帰り）' },
 ]
 
 export default function DataUpload() {
