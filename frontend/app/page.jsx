@@ -26,7 +26,7 @@ export default function Page() {
           <h1 className="text-sm font-bold text-cyan-400 tracking-wide">
             ✈ Broadcast Tracking System
           </h1>
-          <p className="text-xs text-gray-500 mt-0.5">ADS-B / AIS 可視化</p>
+          <p className="text-xs text-gray-500 mt-0.5"><a href="https://visualizing.jp/ads-b/" target="_blank" rel="noopener noreferrer" className="underline hover:text-gray-300">ADS-B</a> / <a href="https://visualizing.jp/ais/" target="_blank" rel="noopener noreferrer" className="underline hover:text-gray-300">AIS</a> 可視化</p>
         </div>
         <div className="flex-1 overflow-y-auto px-4 py-4 space-y-5">
           <DataUpload />
