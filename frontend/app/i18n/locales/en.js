@@ -7,6 +7,11 @@ export default {
   'processing.sample': 'Loading sample data...',
   'processing.file': 'Reading file...',
   'processing.export': 'Exporting...',
+  'processing.savePrep': 'Preparing save...',
+  'header.loadProject': 'Load Project',
+  'header.saveProject': 'Save Project',
+  'toast.noDataToSave': 'No data to save',
+  'toast.saveError': 'Failed to save',
 
   // DataUpload
   'upload.heading': 'Load Data',

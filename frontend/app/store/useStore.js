@@ -112,6 +112,79 @@ const useStore = create((set, get) => ({
     else zoom = 3
     set({ mapCenter: { lat: centerLat, lon: centerLon }, mapZoom: zoom })
   },
+
+  getProjectPayload: () => {
+    const s = get()
+    return {
+      version: 1,
+      chartType: 'bbts',
+      data: {
+        tracks: s.tracks.map((track) => ({
+          id: track.id,
+          label: track.label,
+          type: track.type,
+          iconType: track.iconType,
+          color: track.color,
+          visible: track.visible,
+          points: track.points,
+        })),
+      },
+      settings: {
+        mapCenter: s.mapCenter,
+        mapZoom: s.mapZoom,
+        tileProvider: s.tileProvider,
+        trailMode: s.trailMode,
+        trailWindowMinutes: s.trailWindowMinutes,
+        iconSize: s.iconSize,
+        playbackSpeed: s.playbackSpeed,
+        currentTime: s.currentTime,
+        exportMethod: s.exportMethod,
+        exportFps: s.exportFps,
+        exportWidth: s.exportWidth,
+        exportDrawDatetime: s.exportDrawDatetime,
+        exportDatetimeMode: s.exportDatetimeMode,
+      },
+    }
+  },
+
+  hydrateProject: (payload) => {
+    const tracks = Array.isArray(payload?.data?.tracks)
+      ? payload.data.tracks
+      : Array.isArray(payload?.tracks)
+        ? payload.tracks
+        : []
+    const settings = payload?.settings && typeof payload.settings === 'object' ? payload.settings : {}
+    const allPoints = tracks.flatMap((track) => (Array.isArray(track.points) ? track.points : []))
+    const times = allPoints.map((point) => point.t).filter((value) => Number.isFinite(value))
+    const start = times.length ? Math.min(...times) : 0
+    const end = times.length ? Math.max(...times) : 0
+    const requestedTime = Number(settings.currentTime)
+    const currentTime = Number.isFinite(requestedTime)
+      ? Math.min(Math.max(requestedTime, start), end || requestedTime)
+      : start
+    const mapCenter = settings.mapCenter && Number.isFinite(settings.mapCenter.lat) && Number.isFinite(settings.mapCenter.lon)
+      ? { lat: settings.mapCenter.lat, lon: settings.mapCenter.lon }
+      : { lat: 35.0, lon: 135.0 }
+
+    set({
+      tracks,
+      timeRange: { start, end },
+      currentTime,
+      isPlaying: false,
+      playbackSpeed: Number.isFinite(settings.playbackSpeed) ? settings.playbackSpeed : 10,
+      mapCenter,
+      mapZoom: Number.isFinite(settings.mapZoom) ? settings.mapZoom : 4,
+      tileProvider: settings.tileProvider || 'esri_satellite',
+      trailMode: settings.trailMode || 'full',
+      trailWindowMinutes: Number.isFinite(settings.trailWindowMinutes) ? settings.trailWindowMinutes : 30,
+      iconSize: Number.isFinite(settings.iconSize) ? settings.iconSize : 32,
+      exportMethod: settings.exportMethod || 'client-gif',
+      exportFps: Number.isFinite(settings.exportFps) ? settings.exportFps : 5,
+      exportWidth: Number.isFinite(settings.exportWidth) ? settings.exportWidth : 720,
+      exportDrawDatetime: Boolean(settings.exportDrawDatetime),
+      exportDatetimeMode: settings.exportDatetimeMode || 'utc',
+    })
+  },
 }))
 
 export default useStore

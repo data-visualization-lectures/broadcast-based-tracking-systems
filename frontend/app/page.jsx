@@ -1,5 +1,5 @@
 'use client'
-import { useCallback, useEffect } from 'react'
+import { useCallback, useEffect, useRef } from 'react'
 import dynamic from 'next/dynamic'
 import DataUpload from '@/app/components/Sidebar/DataUpload'
 import TrackList from '@/app/components/Sidebar/TrackList'
@@ -33,18 +33,51 @@ function LangToggle() {
   )
 }
 
+function getThumbnailDataUri() {
+  try {
+    const map = useStore.getState().mapInstance
+    const canvas = map?.getCanvas?.()
+    if (!canvas) return null
+    return canvas.toDataURL('image/png')
+  } catch {
+    return null
+  }
+}
+
 function PageContent() {
   const { t } = useI18n()
   const addTrack = useStore((s) => s.addTrack)
+  const currentProjectIdRef = useRef(null)
+  const currentProjectNameRef = useRef('')
+  const loadedRouteIdRef = useRef(null)
   const showProcessingToast = useCallback((message) => {
     const header = document.querySelector('dataviz-tool-header')
     if (header && typeof header.showMessage === 'function') {
       header.showMessage(message, 'info', 5000)
     }
   }, [])
+  const showToast = useCallback((message, type = 'info') => {
+    const header = document.querySelector('dataviz-tool-header')
+    if (header && typeof header.showMessage === 'function') {
+      header.showMessage(message, type, 3000)
+    }
+  }, [])
 
   useEffect(() => {
+    let cancelled = false
+
+    const applyProjectData = (projectData, meta = {}) => {
+      useStore.getState().hydrateProject(projectData)
+      if (meta.canOverwrite === false) {
+        currentProjectIdRef.current = null
+      } else if (meta.projectId) {
+        currentProjectIdRef.current = meta.projectId
+      }
+      if (meta.projectName) currentProjectNameRef.current = meta.projectName
+    }
+
     customElements.whenDefined('dataviz-tool-header').then(() => {
+      if (cancelled) return
       const header = document.querySelector('dataviz-tool-header')
       if (!header) return
 
@@ -53,7 +86,54 @@ function PageContent() {
           type: 'text',
           text: '✈ Broadcast Tracking System',
           textClass: 'font-bold text-lg text-white'
-        }
+        },
+        buttons: [
+          {
+            label: t('header.loadProject'),
+            action: () => header.showLoadModal(),
+            align: 'right',
+          },
+          {
+            label: t('header.saveProject'),
+            action: () => {
+              const payload = useStore.getState().getProjectPayload()
+              if (!payload.data.tracks.length) {
+                showToast(t('toast.noDataToSave'), 'error')
+                return
+              }
+              showProcessingToast(t('processing.savePrep'))
+              header.showSaveModal({
+                name: currentProjectNameRef.current || '',
+                data: payload,
+                thumbnailDataUri: getThumbnailDataUri(),
+                existingProjectId: currentProjectIdRef.current,
+              })
+            },
+            align: 'right',
+          },
+        ],
+      })
+
+      header.setProjectConfig({
+        appName: 'bbts',
+        toolName: 'Broadcast Tracking System',
+        toolNameEn: 'Broadcast Tracking System',
+        onProjectLoad: (projectData, meta = {}) => {
+          applyProjectData(projectData, {
+            projectId: meta.projectId,
+            projectName: meta.projectName,
+            canOverwrite: meta.canOverwrite,
+          })
+        },
+        onProjectSave: (meta) => {
+          currentProjectIdRef.current = meta.id
+          currentProjectNameRef.current = meta.name || ''
+        },
+        onProjectDelete: (projectId) => {
+          if (currentProjectIdRef.current === projectId) {
+            currentProjectIdRef.current = null
+          }
+        },
       })
 
       header.setSampleConfig({
@@ -71,8 +151,27 @@ function PageContent() {
           }
         }
       })
+
+      const projectId = new URLSearchParams(window.location.search).get('projectId')
+      if (!projectId || loadedRouteIdRef.current === projectId || typeof header.loadProject !== 'function') return
+      loadedRouteIdRef.current = projectId
+      header.loadProject(projectId).then((projectData) => {
+        if (cancelled) return
+        const context = header.getProjectContext?.() || {}
+        applyProjectData(projectData, {
+          projectId,
+          projectName: context.projectName,
+          canOverwrite: context.canOverwrite,
+        })
+      }).catch((error) => {
+        console.error('Failed to load project from URL', error)
+      })
     })
-  }, [addTrack, showProcessingToast, t])
+
+    return () => {
+      cancelled = true
+    }
+  }, [addTrack, showProcessingToast, showToast, t])
 
   return (
     <div className="flex overflow-hidden" style={{ height: 'calc(100vh - 104px)', marginTop: '104px' }}>

@@ -7,6 +7,11 @@ export default {
   'processing.sample': 'サンプルデータを読み込み中です',
   'processing.file': 'ファイルを読み込み中です',
   'processing.export': '書き出し中です',
+  'processing.savePrep': '保存準備中です',
+  'header.loadProject': 'プロジェクトの読込',
+  'header.saveProject': 'プロジェクトの保存',
+  'toast.noDataToSave': '保存するデータがありません',
+  'toast.saveError': '保存に失敗しました',
 
   // DataUpload
   'upload.heading': 'データ読み込み',

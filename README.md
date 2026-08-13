@@ -13,6 +13,7 @@ npm run dev
 
 http://localhost:3000
 http://localhost:3000/?auth_debug
+http://localhost:3000/?projectId=<uuid>&auth_debug
 ```
 
 ### バックエンド（GIF/ZIP エクスポートが必要な場合）
@@ -45,6 +46,7 @@ Timestamp,UTC,MMSI,VesselName,Position,Speed,Course
 
 ## 機能
 
+- プロジェクトの保存・読込（共通ヘッダー、`?projectId=` 復元）
 - CSV ドラッグ＆ドロップ読み込み（複数ファイル対応）
 - 再生 / 停止 / シーク / 速度変更（×1〜×100）
 - 軌跡表示（全表示 / 直近 N 分 / 非表示）
@@ -52,6 +54,14 @@ Timestamp,UTC,MMSI,VesselName,Position,Speed,Course
 - ベースマップ切替（OSM / CartoDB / ESRI 衛星 / 地理院）
 - エクスポート: クライアント GIF / サーバ GIF / 連番 PNG ZIP
 - エクスポート動画への日時描画（中央下部、ベースマップに応じて白/黒切替）
+
+## 実装上の識別子
+
+- `appName`: `bbts`
+- `scope`: `viz`
+- `projectBackend`: `projects`
+- 想定 URL: `https://bbts.dataviz.jp/`
+- 保存プロジェクト起動: `?projectId=<UUID>`
 
 ## 実機確認手順
 
